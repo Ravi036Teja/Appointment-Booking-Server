@@ -235,52 +235,59 @@ exports.addHolidayRange = async (req, res) => {
 // Dashboard stats for admin
 exports.getDashboardStats = async (req, res) => {
   try {
-    const totalBookings = await Booking.countDocuments();
+    const allBookings = await Booking.find();
+    const now = new Date();
 
-    const upcomingBookings = await Booking.countDocuments({
-      date: { $gte: new Date() },
-    });
+    const totalBookings = allBookings.length;
 
-    // Today's time range
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const upcomingBookings = allBookings.filter((booking) => {
+      const slotTime = new Date(`${booking.date}T${booking.time}:00`);
+      return slotTime > now;
+    }).length;
 
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
+    const today = new Date().toISOString().split("T")[0]; // yyyy-mm-dd
+    const todayBookings = allBookings.filter((booking) => booking.date === today).length;
 
-    const todayBookings = await Booking.countDocuments({
-      date: { $gte: todayStart, $lte: todayEnd }
-    });
-
-    const todaySlots = await Booking.find({
-      date: { $gte: todayStart, $lte: todayEnd }
-    }).select('timeSlot -_id');
-
-    const todayBookedSlotCount = todaySlots.length;
-
-    // This week's range (Mon–Sun)
-    const thisWeekStart = new Date();
-    thisWeekStart.setDate(thisWeekStart.getDate() - thisWeekStart.getDay() + 1); // Monday
-    thisWeekStart.setHours(0, 0, 0, 0);
-
-    const thisWeekEnd = new Date(thisWeekStart);
-    thisWeekEnd.setDate(thisWeekEnd.getDate() + 6); // Sunday
-    thisWeekEnd.setHours(23, 59, 59, 999);
-
-    const bookingsThisWeek = await Booking.countDocuments({
-      date: { $gte: thisWeekStart, $lte: thisWeekEnd }
-    });
-
-    // Send response
-    res.status(200).json({
+    res.json({
       totalBookings,
       upcomingBookings,
       todayBookings,
-      todayBookedSlotCount,
-      bookingsThisWeek
     });
   } catch (error) {
-    console.error('Error fetching dashboard stats:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error("Error fetching dashboard stats:", error);
+    res.status(500).json({ message: "Error fetching dashboard stats" });
   }
 };
+
+// exports.getDashboardStats = async (req, res) => {
+//   try {
+//     const allBookings = await Booking.find();
+//     const now = new Date();
+//     const today = new Date().toISOString().split("T")[0]; // yyyy-mm-dd
+
+//     console.log("NOW:", now);
+//     console.log("TODAY STRING:", today);
+//     console.log("---- BOOKINGS ----");
+//     allBookings.forEach((b) => {
+//       console.log(`Date: ${b.date} | Time: ${b.time}`);
+//     });
+
+//     const totalBookings = allBookings.length;
+
+//     const upcomingBookings = allBookings.filter((booking) => {
+//       const slotTime = new Date(`${booking.date}T${booking.time}:00`);
+//       return slotTime > now;
+//     }).length;
+
+//     const todayBookings = allBookings.filter((booking) => booking.date === today).length;
+
+//     res.json({
+//       totalBookings,
+//       upcomingBookings,
+//       todayBookings,
+//     });
+//   } catch (error) {
+//     console.error("Error fetching dashboard stats:", error);
+//     res.status(500).json({ message: "Error fetching dashboard stats" });
+//   }
+// };

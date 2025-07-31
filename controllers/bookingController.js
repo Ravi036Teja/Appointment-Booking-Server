@@ -13,7 +13,7 @@ exports.getAllBookings = async (req, res) => {
 };
 
 exports.bookSlot = async (req, res) => {
-  const { date, timeSlot, name, phone } = req.body;
+  const { date, timeSlot, name, phone, email } = req.body;
 
   try {
     // Prevent booking past time slots (including same day)
@@ -25,7 +25,7 @@ exports.bookSlot = async (req, res) => {
     }
 
     // Save booking
-    const newBooking = new Booking({ date, timeSlot, name, phone });
+    const newBooking = new Booking({ date, timeSlot, name, phone, email });
     await newBooking.save();
 
     // Send WhatsApp confirmation
