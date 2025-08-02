@@ -14,7 +14,8 @@ const adminUserSchema = new mongoose.Schema({
   password: {
     type: String,
     required: [true, 'Password is required'],
-    minlength: [6, 'Password must be at least 6 characters long']
+    minlength: [6, 'Password must be at least 6 characters long'],
+    select: false // <--- ADDED: Do not return password by default when querying users
   },
   // You might want to add a 'role' field later if you have different admin levels
   // role: {
@@ -22,10 +23,12 @@ const adminUserSchema = new mongoose.Schema({
   //   enum: ['admin', 'superadmin', 'editor'],
   //   default: 'admin'
   // },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
+  // createdAt: { // This is redundant if timestamps: true is used
+  //   type: Date,
+  //   default: Date.now
+  // }
+}, {
+  timestamps: true // <--- ADDED: Mongoose will automatically manage createdAt and updatedAt fields
 });
 
 // Hash password before saving
@@ -40,6 +43,9 @@ adminUserSchema.pre('save', async function(next) {
 
 // Method to compare password
 adminUserSchema.methods.matchPassword = async function(enteredPassword) {
+  // 'this.password' here will be the hashed password IF it was explicitly selected in the query
+  // or if 'select: false' was not set on the schema.
+  // With `select: false` now added, the controller MUST use `.select('+password')`.
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
