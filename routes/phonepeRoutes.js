@@ -466,27 +466,29 @@ const { URLSearchParams } = require('url');
 const Booking = require("../models/Booking");
 const router = express.Router();
 
-// The 'Client Id' from your dashboard should be used as MERCHANT_ID.
-// The 'Client Secret' from your dashboard should be used as SALT_KEY.
+// --- Configuration ---
+// Make sure these are set in your environment variables for production.
 const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID;
 const SALT_KEY = process.env.PHONEPE_SALT_KEY;
 const SALT_INDEX = 1;
 
-// V2 API Endpoints
+// --- API Endpoints ---
 const AUTH_URL = "https://api.phonepe.com/apis/identity-manager/v1/oauth/token";
 const PAY_URL = "https://api.phonepe.com/apis/pg/checkout/v2/pay";
 const STATUS_URL = "https://api.phonepe.com/apis/pg/checkout/v2/order";
+const REFUND_URL = "https://api.phonepe.com/apis/pg/payments/v2/refund";
 
 // Production URLs for callbacks and redirects
 const REDIRECT_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/redirect-handler";
 const CALLBACK_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/callback";
 
-// Endpoint to initiate a payment (V2 two-step process)
+// --- Endpoint to initiate a payment (V2 two-step process) ---
 router.post("/pay", async (req, res) => {
   try {
     const { name, phone, date, timeSlot, amount } = req.body;
 
     if (!name || !phone || !date || !timeSlot || !amount) {
+      console.error("Missing required booking information.");
       return res.status(400).json({ message: "Missing required booking information." });
     }
     
@@ -496,6 +498,7 @@ router.post("/pay", async (req, res) => {
       status: { $in: ["Paid", "Pending"] },
     });
     if (existingBooking) {
+      console.error("Slot is already taken.");
       return res.status(409).json({
         message: "This slot is already taken. Please choose another one.",
       });
@@ -513,9 +516,11 @@ router.post("/pay", async (req, res) => {
     
     const merchantTransactionId = newBooking._id.toString();
 
-    // ----------------------
-    // STEP 1: Get Auth Token (using x-www-form-urlencoded with client credentials in body)
-    // ----------------------
+    // ----------------------------------------------------------------
+    // STEP 1: Get Auth Token
+    // Docs: https://developer.phonepe.com/payment-gateway/api-integration/api-reference/authorization
+    // ----------------------------------------------------------------
+    console.log("--- Starting Auth Token request ---");
     const authTokenPayload = {
       client_id: MERCHANT_ID,
       client_secret: SALT_KEY,
@@ -523,7 +528,8 @@ router.post("/pay", async (req, res) => {
       grant_type: "client_credentials"
     };
     const authTokenBody = new URLSearchParams(authTokenPayload).toString();
-    
+    console.log("Auth Token Request Body:", authTokenBody);
+
     const authTokenResponse = await axios.post(
       AUTH_URL,
       authTokenBody,
@@ -534,18 +540,23 @@ router.post("/pay", async (req, res) => {
       }
     );
 
+    console.log("PhonePe Auth Token Response Data:", authTokenResponse.data);
     const authToken = authTokenResponse.data.authToken;
     if (!authToken) {
+      console.error("Failed to get PhonePe Auth Token. No authToken found in response.");
       return res.status(500).json({ message: "Failed to get PhonePe Auth Token." });
     }
+    console.log("Auth Token successfully received.");
 
-    // ----------------------
-    // STEP 2: Initiate Payment with Auth Token (using base64-encoded payload & X-VERIFY)
-    // ----------------------
+    // ----------------------------------------------------------------
+    // STEP 2: Initiate Payment (Invoke PayPage)
+    // Docs: https://developer.phonepe.com/payment-gateway/website-integration/standard-checkout/api-integration/api-reference/invoke-iframe-paypage
+    // ----------------------------------------------------------------
+    console.log("--- Starting Payment Initiation request ---");
     const paymentPayload = {
       merchantId: MERCHANT_ID,
       merchantTransactionId: merchantTransactionId,
-      amount: amount * 100,
+      amount: amount * 100, // Amount in paise
       redirectUrl: REDIRECT_URL,
       redirectMode: "POST",
       callbackUrl: CALLBACK_URL,
@@ -558,11 +569,14 @@ router.post("/pay", async (req, res) => {
     const paymentPayloadString = JSON.stringify(paymentPayload);
     const paymentBase64Payload = Buffer.from(paymentPayloadString).toString("base64");
     
+    const paymentChecksumString = paymentBase64Payload + "/apis/pg/checkout/v2/pay";
+    console.log("Payment Checksum String:", paymentChecksumString);
     const paymentChecksum = crypto
       .createHmac("sha256", SALT_KEY)
-      .update(paymentBase64Payload + "/apis/pg/checkout/v2/pay")
+      .update(paymentChecksumString)
       .digest("hex");
     const finalPaymentChecksum = paymentChecksum + "###" + SALT_INDEX;
+    console.log("Generated X-VERIFY for Payment:", finalPaymentChecksum);
 
     const phonepeResponse = await axios.post(
       PAY_URL,
@@ -576,15 +590,18 @@ router.post("/pay", async (req, res) => {
       }
     );
 
+    console.log("Payment Initiation Response Data:", phonepeResponse.data);
     const redirectInfo = phonepeResponse.data?.data?.instrumentResponse?.redirectInfo;
 
     if (redirectInfo && redirectInfo.url) {
+      console.log("Payment initiated successfully. Redirecting user.");
       res.status(200).json({
         success: true,
         message: "Payment initiated successfully",
         data: phonepeResponse.data.data,
       });
     } else {
+      console.error("Payment initiation failed: no redirect URL found in response.");
       res.status(500).json({ 
         message: "Payment initiation failed: no redirect URL.",
         error: phonepeResponse.data
@@ -602,47 +619,63 @@ router.post("/pay", async (req, res) => {
   }
 });
 
-// Endpoint to handle PhonePe's POST redirect
+// --- Endpoint to handle PhonePe's POST redirect ---
 router.post("/redirect-handler", async (req, res) => {
   try {
     const { code, transactionId } = req.body;
+    console.log("Redirect Handler received a response:", req.body);
     const status = code === "PAYMENT_SUCCESS" ? "success" : "failure";
     res.redirect(`https://manjunathrajpurohit.in/payment-success?status=${status}&transactionId=${transactionId}`);
   } catch (error) {
+    console.error("Error in redirect handler:", error.message);
     res.redirect("https://manjunathrajpurohit.in/payment-failure?error=redirect-failed");
   }
 });
 
-// Webhook endpoint to receive payment status from PhonePe (V2)
+// --- Webhook endpoint to receive payment status from PhonePe (V2) ---
+// Docs: https://developer.phonepe.com/payment-gateway/mobile-app-integration/standard-checkout-mobile/webhook-handling
 router.post("/callback", async (req, res) => {
   try {
     const { response } = req.body;
+    console.log("Webhook callback received a response:", req.body);
+
     const decodedResponse = JSON.parse(
       Buffer.from(response, "base64").toString("utf-8")
     );
+    console.log("Decoded Webhook Response:", decodedResponse);
+
     const { merchantTransactionId, state } = decodedResponse.data;
 
     // Verify V2 checksum for the callback
+    const checkSumString = response;
+    console.log("Webhook Checksum String:", checkSumString);
     const checkSum =
       crypto
         .createHmac("sha256", SALT_KEY)
-        .update(response)
+        .update(checkSumString)
         .digest("hex") +
       "###" +
       SALT_INDEX;
     const phonepeChecksum = req.headers["x-verify"];
+    console.log("Generated Checksum:", checkSum);
+    console.log("Received Checksum:", phonepeChecksum);
 
     if (checkSum !== phonepeChecksum) {
+      console.error("Webhook Checksum mismatch.");
       return res.status(400).send({ message: "Checksum mismatch" });
     }
+    console.log("Webhook Checksum verified successfully.");
 
     if (state === "COMPLETED") {
       await Booking.findByIdAndUpdate(merchantTransactionId, { status: "Paid" });
+      console.log(`Booking for transaction ${merchantTransactionId} marked as Paid.`);
     } else {
       await Booking.findByIdAndUpdate(merchantTransactionId, { status: "Failed" });
+      console.log(`Booking for transaction ${merchantTransactionId} marked as Failed.`);
     }
     res.status(200).send("OK");
   } catch (error) {
+    console.error("Failed to process webhook callback:", error.message);
     res.status(500).send({
       message: "Failed to process callback",
       error: error.message,
@@ -650,19 +683,24 @@ router.post("/callback", async (req, res) => {
   }
 });
 
-// Endpoint to check the status of a specific transaction (V2)
+// --- Endpoint to check the status of a specific transaction (V2) ---
+// Docs: https://developer.phonepe.com/payment-gateway/mobile-app-integration/standard-checkout-mobile/api-reference/check-order-status
 router.get("/status/:transactionId", async (req, res) => {
   try {
     const { transactionId } = req.params;
+    console.log("Checking status for transaction ID:", transactionId);
 
     // Checksum for Check Order Status API
+    const checkSumString = `/apis/pg/checkout/v2/order/${transactionId}/status`;
+    console.log("Status Checksum String:", checkSumString);
     const checkSum =
       crypto
         .createHmac("sha256", SALT_KEY)
-        .update(`/apis/pg/checkout/v2/order/${transactionId}/status`)
+        .update(checkSumString)
         .digest("hex") +
       "###" +
       SALT_INDEX;
+    console.log("Generated X-VERIFY for Status Check:", checkSum);
 
     const response = await axios.get(
       `${STATUS_URL}/${transactionId}/status`,
@@ -673,10 +711,59 @@ router.get("/status/:transactionId", async (req, res) => {
         },
       }
     );
+    console.log("Order Status Response Data:", response.data);
     res.status(200).send(response.data);
   } catch (error) {
+    console.error("Failed to get payment status:", error.response?.data || error.message);
     res.status(500).send({
       message: "Failed to get payment status",
+      error: error.response?.data || error.message,
+    });
+  }
+});
+
+// --- Endpoint for Refund API ---
+// Docs: https://developer.phonepe.com/payment-gateway/website-integration/standard-checkout/api-integration/api-reference/refund
+router.post("/refund", async (req, res) => {
+  try {
+    const { merchantTransactionId, originalTransactionId, amount } = req.body;
+    console.log("Starting refund for transaction:", originalTransactionId);
+
+    const refundPayload = {
+      merchantId: MERCHANT_ID,
+      merchantTransactionId: merchantTransactionId,
+      originalTransactionId: originalTransactionId,
+      amount: amount * 100, // Amount in paise
+    };
+
+    const refundPayloadString = JSON.stringify(refundPayload);
+    const refundBase64Payload = Buffer.from(refundPayloadString).toString("base64");
+
+    const refundChecksumString = refundBase64Payload + "/apis/pg/payments/v2/refund";
+    console.log("Refund Checksum String:", refundChecksumString);
+    const refundChecksum = crypto
+      .createHmac("sha256", SALT_KEY)
+      .update(refundChecksumString)
+      .digest("hex");
+    const finalRefundChecksum = refundChecksum + "###" + SALT_INDEX;
+    console.log("Generated X-VERIFY for Refund:", finalRefundChecksum);
+
+    const response = await axios.post(
+      REFUND_URL,
+      { request: refundBase64Payload },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "X-VERIFY": finalRefundChecksum,
+        },
+      }
+    );
+    console.log("Refund Response Data:", response.data);
+    res.status(200).send(response.data);
+  } catch (error) {
+    console.error("Failed to process refund:", error.response?.data || error.message);
+    res.status(500).send({
+      message: "Failed to process refund",
       error: error.response?.data || error.message,
     });
   }
