@@ -469,9 +469,11 @@ const router = express.Router();
 // Update these with your V2 LIVE production credentials from the PhonePe dashboard
 // The 'Client Id' from your dashboard should be used as MERCHANT_ID.
 // The 'Client Secret' from your dashboard should be used as SALT_KEY.
-const MERCHANT_ID = "SU2508041250251684479116"; // From your dashboard screenshot
-const SALT_KEY = "acfe1062-e153-4f7f-9d3d-dccc9ceec09d"; // From your dashboard screenshot
+
+const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID;
+const SALT_KEY = process.env.PHONEPE_SALT_KEY;
 const SALT_INDEX = 1;
+
 
 // V2 API Endpoints
 const AUTH_URL = "https://api.phonepe.com/apis/identity-manager/v1/oauth/token";
@@ -513,6 +515,8 @@ router.post("/pay", async (req, res) => {
     await newBooking.save();
     
     const merchantTransactionId = newBooking._id.toString();
+     console.log("Using Merchant ID:", MERCHANT_ID);
+    console.log("Using Salt Key:", SALT_KEY);
 
     // ----------------------
     // STEP 1: Get Auth Token (using Basic Authentication with Client Secret)
