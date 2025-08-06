@@ -518,7 +518,6 @@ router.post("/pay", async (req, res) => {
 
     // ----------------------------------------------------------------
     // STEP 1: Get Auth Token
-    // Docs: https://developer.phonepe.com/payment-gateway/api-integration/api-reference/authorization
     // ----------------------------------------------------------------
     console.log("--- Starting Auth Token request ---");
     const authTokenPayload = {
@@ -541,16 +540,15 @@ router.post("/pay", async (req, res) => {
     );
 
     console.log("PhonePe Auth Token Response Data:", authTokenResponse.data);
-  const authToken = authTokenResponse.data.access_token;
+    const authToken = authTokenResponse.data.access_token;
     if (!authToken) {
-      console.error("Failed to get PhonePe Auth Token. No authToken found in response.");
+      console.error("Failed to get PhonePe Auth Token. No access_token found in response.");
       return res.status(500).json({ message: "Failed to get PhonePe Auth Token." });
     }
     console.log("Auth Token successfully received.");
 
     // ----------------------------------------------------------------
     // STEP 2: Initiate Payment (Invoke PayPage)
-    // Docs: https://developer.phonepe.com/payment-gateway/website-integration/standard-checkout/api-integration/api-reference/invoke-iframe-paypage
     // ----------------------------------------------------------------
     console.log("--- Starting Payment Initiation request ---");
     const paymentPayload = {
@@ -578,8 +576,6 @@ router.post("/pay", async (req, res) => {
     const finalPaymentChecksum = paymentChecksum + "###" + SALT_INDEX;
     console.log("Generated X-VERIFY for Payment:", finalPaymentChecksum);
 
-     console.log("Using Auth Token for Payment:", authToken);
-     
     const phonepeResponse = await axios.post(
       PAY_URL,
       { request: paymentBase64Payload },
@@ -587,7 +583,7 @@ router.post("/pay", async (req, res) => {
         headers: {
           "Content-Type": "application/json",
           "X-VERIFY": finalPaymentChecksum,
-          "X-AUTHTOKEN": authToken,
+          "X-AUTHTOKEN": `O-Bearer ${authToken}`, // Correctly prefixing the token
         },
       }
     );
@@ -635,7 +631,6 @@ router.post("/redirect-handler", async (req, res) => {
 });
 
 // --- Webhook endpoint to receive payment status from PhonePe (V2) ---
-// Docs: https://developer.phonepe.com/payment-gateway/mobile-app-integration/standard-checkout-mobile/webhook-handling
 router.post("/callback", async (req, res) => {
   try {
     const { response } = req.body;
@@ -648,7 +643,6 @@ router.post("/callback", async (req, res) => {
 
     const { merchantTransactionId, state } = decodedResponse.data;
 
-    // Verify V2 checksum for the callback
     const checkSumString = response;
     console.log("Webhook Checksum String:", checkSumString);
     const checkSum =
@@ -686,13 +680,11 @@ router.post("/callback", async (req, res) => {
 });
 
 // --- Endpoint to check the status of a specific transaction (V2) ---
-// Docs: https://developer.phonepe.com/payment-gateway/mobile-app-integration/standard-checkout-mobile/api-reference/check-order-status
 router.get("/status/:transactionId", async (req, res) => {
   try {
     const { transactionId } = req.params;
     console.log("Checking status for transaction ID:", transactionId);
 
-    // Checksum for Check Order Status API
     const checkSumString = `/apis/pg/checkout/v2/order/${transactionId}/status`;
     console.log("Status Checksum String:", checkSumString);
     const checkSum =
@@ -725,7 +717,6 @@ router.get("/status/:transactionId", async (req, res) => {
 });
 
 // --- Endpoint for Refund API ---
-// Docs: https://developer.phonepe.com/payment-gateway/website-integration/standard-checkout/api-integration/api-reference/refund
 router.post("/refund", async (req, res) => {
   try {
     const { merchantTransactionId, originalTransactionId, amount } = req.body;
