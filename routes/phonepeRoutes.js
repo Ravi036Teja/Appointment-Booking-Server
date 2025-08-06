@@ -541,7 +541,7 @@ router.post("/pay", async (req, res) => {
     );
 
     console.log("PhonePe Auth Token Response Data:", authTokenResponse.data);
-    const authToken = authTokenResponse.data.authToken;
+  const authToken = authTokenResponse.data.access_token;
     if (!authToken) {
       console.error("Failed to get PhonePe Auth Token. No authToken found in response.");
       return res.status(500).json({ message: "Failed to get PhonePe Auth Token." });
