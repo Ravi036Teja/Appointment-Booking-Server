@@ -273,7 +273,7 @@ router.post("/pay", async (req, res) => {
         .status(400)
         .json({ message: "Missing required booking information." });
     }
-
+    
     const existingBooking = await Booking.findOne({
       date,
       timeSlot,
@@ -313,12 +313,14 @@ router.post("/pay", async (req, res) => {
     const payloadString = JSON.stringify(paymentPayload);
     const base64Payload = Buffer.from(payloadString).toString("base64");
     
-    // Checksum calculation for the /pay endpoint
     const checksum = crypto
       .createHash("sha256")
       .update(base64Payload + "/pg/v1/pay" + SALT_KEY)
       .digest("hex");
     const finalChecksum = checksum + "###" + SALT_INDEX;
+    
+    // Log the checksum being sent
+    console.log("Generated Checksum:", finalChecksum);
 
     const phonepeResponse = await axios.post(
       `${PHONEPE_HOST_URL}/pay`,
@@ -348,10 +350,14 @@ router.post("/pay", async (req, res) => {
         .json({ message: "Payment initiation failed: no redirect URL." });
     }
   } catch (error) {
+    // THIS IS THE CRITICAL CHANGE: Log the entire error object
+    console.error("An unexpected error occurred during payment initiation:", error);
+    
+    const errorMessage = error.response?.data || error.message || error;
     res.status(500).json({
       message:
         "Server error during payment initiation. Please try again later.",
-      error: error.response?.data || error.message,
+      error: errorMessage,
     });
   }
 });
