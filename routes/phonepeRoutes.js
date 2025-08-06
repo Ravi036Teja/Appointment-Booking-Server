@@ -459,21 +459,21 @@
 // Please use this code and ensure you have updated your environment variables with the new **V2 credentials**. This version of the code should work smoothly in production.
 
 // ### `phonepeRoutes.js` (V2 Implementation - Final)
-
-
 const express = require("express");
 const crypto = require("crypto");
 const axios = require("axios");
-const { URLSearchParams } = require('url'); // Import URLSearchParams for form-urlencoded payload
+const { URLSearchParams } = require('url');
 const Booking = require("../models/Booking");
 const router = express.Router();
 
-// TODO: Update these with your V2 LIVE production credentials from the PhonePe dashboard
-const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID;
-const SALT_KEY = process.env.PHONEPE_SALT_KEY;
+// Update these with your V2 LIVE production credentials from the PhonePe dashboard
+// The 'Client Id' from your dashboard should be used as MERCHANT_ID.
+// The 'Client Secret' from your dashboard should be used as SALT_KEY.
+const MERCHANT_ID = "SU2508041250251684479116"; // From your dashboard screenshot
+const SALT_KEY = "acfe1062-e153-4f7f-9d3d-dccc9ceec09d"; // From your dashboard screenshot
 const SALT_INDEX = 1;
 
-// V2 API Endpoints from your documentation
+// V2 API Endpoints
 const AUTH_URL = "https://api.phonepe.com/apis/identity-manager/v1/oauth/token";
 const PAY_URL = "https://api.phonepe.com/apis/pg/checkout/v2/pay";
 const STATUS_URL = "https://api.phonepe.com/apis/pg/checkout/v2/order";
@@ -515,7 +515,7 @@ router.post("/pay", async (req, res) => {
     const merchantTransactionId = newBooking._id.toString();
 
     // ----------------------
-    // STEP 1: Get Auth Token (using x-www-form-urlencoded)
+    // STEP 1: Get Auth Token (using Basic Authentication with Client Secret)
     // ----------------------
     const authTokenPayload = {
       client_version: 1,
@@ -523,19 +523,16 @@ router.post("/pay", async (req, res) => {
     };
     const authTokenBody = new URLSearchParams(authTokenPayload).toString();
 
-    const authTokenChecksum = crypto
-      .createHmac("sha256", SALT_KEY)
-      .update(authTokenBody + "/apis/identity-manager/v1/oauth/token")
-      .digest("hex");
-    const finalAuthTokenChecksum = authTokenChecksum + "###" + SALT_INDEX;
-
+    // The Authorization header uses a Base64 encoded string of `clientId:clientSecret`.
+    const authHeaderValue = Buffer.from(`${MERCHANT_ID}:${SALT_KEY}`).toString('base64');
+    
     const authTokenResponse = await axios.post(
       AUTH_URL,
       authTokenBody,
       {
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
-          "X-VERIFY": finalAuthTokenChecksum,
+          "Authorization": `Basic ${authHeaderValue}`
         },
       }
     );
@@ -546,7 +543,7 @@ router.post("/pay", async (req, res) => {
     }
 
     // ----------------------
-    // STEP 2: Initiate Payment with Auth Token (using base64-encoded payload)
+    // STEP 2: Initiate Payment with Auth Token (using base64-encoded payload & X-VERIFY)
     // ----------------------
     const paymentPayload = {
       merchantId: MERCHANT_ID,
@@ -598,7 +595,7 @@ router.post("/pay", async (req, res) => {
     }
 
   } catch (error) {
-    console.error("An unexpected error occurred during payment initiation:", error);
+    console.error("An unexpected error occurred during payment initiation:", error.response?.data || error.message);
     
     const errorMessage = error.response?.data?.message || error.message || error;
     res.status(500).json({
@@ -628,7 +625,7 @@ router.post("/callback", async (req, res) => {
     );
     const { merchantTransactionId, state } = decodedResponse.data;
 
-    // IMPORTANT: Verify V2 checksum for the callback
+    // Verify V2 checksum for the callback
     const checkSum =
       crypto
         .createHmac("sha256", SALT_KEY)
