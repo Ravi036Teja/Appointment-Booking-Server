@@ -578,6 +578,8 @@ router.post("/pay", async (req, res) => {
     const finalPaymentChecksum = paymentChecksum + "###" + SALT_INDEX;
     console.log("Generated X-VERIFY for Payment:", finalPaymentChecksum);
 
+     console.log("Using Auth Token for Payment:", authToken);
+     
     const phonepeResponse = await axios.post(
       PAY_URL,
       { request: paymentBase64Payload },
