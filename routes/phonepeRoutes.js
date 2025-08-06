@@ -460,22 +460,23 @@
 
 // ### `phonepeRoutes.js` (V2 Implementation - Final)
 
+
 const express = require("express");
 const crypto = require("crypto");
 const axios = require("axios");
+const { URLSearchParams } = require('url'); // Import URLSearchParams for form-urlencoded payload
 const Booking = require("../models/Booking");
 const router = express.Router();
 
-// TODO: Update these with your V2 LIVE production credentials
+// TODO: Update these with your V2 LIVE production credentials from the PhonePe dashboard
 const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID;
 const SALT_KEY = process.env.PHONEPE_SALT_KEY;
 const SALT_INDEX = 1;
 
-// V2 API Endpoints
+// V2 API Endpoints from your documentation
 const AUTH_URL = "https://api.phonepe.com/apis/identity-manager/v1/oauth/token";
 const PAY_URL = "https://api.phonepe.com/apis/pg/checkout/v2/pay";
 const STATUS_URL = "https://api.phonepe.com/apis/pg/checkout/v2/order";
-const REFUND_URL = "https://api.phonepe.com/apis/pg/payments/v2/refund";
 
 // Production URLs for callbacks and redirects
 const REDIRECT_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/redirect-handler";
@@ -514,24 +515,26 @@ router.post("/pay", async (req, res) => {
     const merchantTransactionId = newBooking._id.toString();
 
     // ----------------------
-    // STEP 1: Get Auth Token
+    // STEP 1: Get Auth Token (using x-www-form-urlencoded)
     // ----------------------
-    const authTokenPayload = { merchantId: MERCHANT_ID };
-    const authTokenPayloadString = JSON.stringify(authTokenPayload);
-    const authTokenBase64Payload = Buffer.from(authTokenPayloadString).toString("base64");
-    
+    const authTokenPayload = {
+      client_version: 1,
+      grant_type: "client_credentials"
+    };
+    const authTokenBody = new URLSearchParams(authTokenPayload).toString();
+
     const authTokenChecksum = crypto
-      .createHash("sha256")
-      .update(authTokenBase64Payload + "/apis/identity-manager/v1/oauth/token" + SALT_KEY)
+      .createHmac("sha256", SALT_KEY)
+      .update(authTokenBody + "/apis/identity-manager/v1/oauth/token")
       .digest("hex");
     const finalAuthTokenChecksum = authTokenChecksum + "###" + SALT_INDEX;
 
     const authTokenResponse = await axios.post(
       AUTH_URL,
-      { request: authTokenBase64Payload },
+      authTokenBody,
       {
         headers: {
-          "Content-Type": "application/json",
+          "Content-Type": "application/x-www-form-urlencoded",
           "X-VERIFY": finalAuthTokenChecksum,
         },
       }
@@ -543,7 +546,7 @@ router.post("/pay", async (req, res) => {
     }
 
     // ----------------------
-    // STEP 2: Initiate Payment with Auth Token
+    // STEP 2: Initiate Payment with Auth Token (using base64-encoded payload)
     // ----------------------
     const paymentPayload = {
       merchantId: MERCHANT_ID,
@@ -562,8 +565,8 @@ router.post("/pay", async (req, res) => {
     const paymentBase64Payload = Buffer.from(paymentPayloadString).toString("base64");
     
     const paymentChecksum = crypto
-      .createHash("sha256")
-      .update(paymentBase64Payload + "/apis/pg/checkout/v2/pay" + SALT_KEY)
+      .createHmac("sha256", SALT_KEY)
+      .update(paymentBase64Payload + "/apis/pg/checkout/v2/pay")
       .digest("hex");
     const finalPaymentChecksum = paymentChecksum + "###" + SALT_INDEX;
 
@@ -595,7 +598,6 @@ router.post("/pay", async (req, res) => {
     }
 
   } catch (error) {
-    // THIS CATCH BLOCK IS UPDATED TO LOG THE FULL ERROR OBJECT
     console.error("An unexpected error occurred during payment initiation:", error);
     
     const errorMessage = error.response?.data?.message || error.message || error;
@@ -629,8 +631,8 @@ router.post("/callback", async (req, res) => {
     // IMPORTANT: Verify V2 checksum for the callback
     const checkSum =
       crypto
-        .createHash("sha256")
-        .update(response + SALT_KEY)
+        .createHmac("sha256", SALT_KEY)
+        .update(response)
         .digest("hex") +
       "###" +
       SALT_INDEX;
@@ -662,8 +664,8 @@ router.get("/status/:transactionId", async (req, res) => {
     // Checksum for Check Order Status API
     const checkSum =
       crypto
-        .createHash("sha256")
-        .update(`/apis/pg/checkout/v2/order/${transactionId}/status` + SALT_KEY)
+        .createHmac("sha256", SALT_KEY)
+        .update(`/apis/pg/checkout/v2/order/${transactionId}/status`)
         .digest("hex") +
       "###" +
       SALT_INDEX;
