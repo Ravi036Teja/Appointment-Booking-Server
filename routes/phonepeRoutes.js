@@ -256,7 +256,7 @@ const router = express.Router();
 const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID;
 const SALT_KEY = process.env.PHONEPE_SALT_KEY;
 const SALT_INDEX = 1;
-const PHONEPE_HOST_URL = "https://api.phonepe.com/apis/hermes/pg/v1";
+const PHONEPE_HOST_URL = "https://api.phonepe.com/apis/hermes";
 
 // Use your Render domain for callbacks and redirects for production
 // For local testing, use a tool like ngrok to expose your localhost to the internet.
