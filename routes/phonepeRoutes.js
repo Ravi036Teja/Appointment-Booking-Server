@@ -466,14 +466,11 @@ const { URLSearchParams } = require('url');
 const Booking = require("../models/Booking");
 const router = express.Router();
 
-// Update these with your V2 LIVE production credentials from the PhonePe dashboard
 // The 'Client Id' from your dashboard should be used as MERCHANT_ID.
 // The 'Client Secret' from your dashboard should be used as SALT_KEY.
-
 const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID;
 const SALT_KEY = process.env.PHONEPE_SALT_KEY;
 const SALT_INDEX = 1;
-
 
 // V2 API Endpoints
 const AUTH_URL = "https://api.phonepe.com/apis/identity-manager/v1/oauth/token";
@@ -515,39 +512,24 @@ router.post("/pay", async (req, res) => {
     await newBooking.save();
     
     const merchantTransactionId = newBooking._id.toString();
-     console.log("Using Merchant ID:", MERCHANT_ID);
-    console.log("Using Salt Key:", SALT_KEY);
 
     // ----------------------
-    // STEP 1: Get Auth Token (using Basic Authentication with Client Secret)
+    // STEP 1: Get Auth Token (using x-www-form-urlencoded with client credentials in body)
     // ----------------------
-     const authTokenPayload = {
-      client_id: MERCHANT_ID,     // Add client_id
-      client_secret: SALT_KEY,    // Add client_secret
+    const authTokenPayload = {
+      client_id: MERCHANT_ID,
+      client_secret: SALT_KEY,
       client_version: 1,
       grant_type: "client_credentials"
     };
     const authTokenBody = new URLSearchParams(authTokenPayload).toString();
-
-    // The Authorization header uses a Base64 encoded string of `clientId:clientSecret`.
-    const authHeaderValue = Buffer.from(`${MERCHANT_ID}:${SALT_KEY}`).toString('base64');
     
-    // As per the documentation you provided, this endpoint requires a checksum.
-    const stringToHash = authTokenBody + "/apis/identity-manager/v1/oauth/token";
-    const authTokenChecksum = crypto
-      .createHmac("sha256", SALT_KEY)
-      .update(stringToHash)
-      .digest("hex");
-    const finalAuthTokenChecksum = authTokenChecksum + "###" + SALT_INDEX;
-
     const authTokenResponse = await axios.post(
       AUTH_URL,
       authTokenBody,
       {
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
-          "Authorization": `Basic ${authHeaderValue}`,
-          "X-VERIFY": finalAuthTokenChecksum,
         },
       }
     );
