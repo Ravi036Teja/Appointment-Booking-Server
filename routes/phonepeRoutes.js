@@ -273,7 +273,7 @@
 //         .status(400)
 //         .json({ message: "Missing required booking information." });
 //     }
-    
+
 //     const existingBooking = await Booking.findOne({
 //       date,
 //       timeSlot,
@@ -312,13 +312,13 @@
 
 //     const payloadString = JSON.stringify(paymentPayload);
 //     const base64Payload = Buffer.from(payloadString).toString("base64");
-    
+
 //     const checksum = crypto
 //       .createHash("sha256")
 //       .update(base64Payload + "/pg/v1/pay" + SALT_KEY)
 //       .digest("hex");
 //     const finalChecksum = checksum + "###" + SALT_INDEX;
-    
+
 //     // Log the checksum being sent
 //     console.log("Generated Checksum:", finalChecksum);
 
@@ -352,7 +352,7 @@
 //   } catch (error) {
 //     // THIS IS THE CRITICAL CHANGE: Log the entire error object
 //     console.error("An unexpected error occurred during payment initiation:", error);
-    
+
 //     const errorMessage = error.response?.data || error.message || error;
 //     res.status(500).json({
 //       message:
@@ -462,7 +462,7 @@
 const express = require("express");
 const crypto = require("crypto");
 const axios = require("axios");
-const { URLSearchParams } = require('url');
+const { URLSearchParams } = require("url");
 const Booking = require("../models/Booking");
 const router = express.Router();
 
@@ -479,8 +479,10 @@ const STATUS_URL = "https://api.phonepe.com/apis/pg/checkout/v2/order";
 const REFUND_URL = "https://api.phonepe.com/apis/pg/payments/v2/refund";
 
 // Production URLs for callbacks and redirects
-const REDIRECT_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/redirect-handler";
-const CALLBACK_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/callback";
+const REDIRECT_URL =
+  "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/redirect-handler";
+const CALLBACK_URL =
+  "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/callback";
 
 // --- Endpoint to initiate a payment (V2 two-step process) ---
 router.post("/pay", async (req, res) => {
@@ -489,9 +491,11 @@ router.post("/pay", async (req, res) => {
 
     if (!name || !phone || !date || !timeSlot || !amount) {
       console.error("Missing required booking information.");
-      return res.status(400).json({ message: "Missing required booking information." });
+      return res
+        .status(400)
+        .json({ message: "Missing required booking information." });
     }
-    
+
     const existingBooking = await Booking.findOne({
       date,
       timeSlot,
@@ -513,7 +517,7 @@ router.post("/pay", async (req, res) => {
       status: "Pending",
     });
     await newBooking.save();
-    
+
     const merchantTransactionId = newBooking._id.toString();
 
     // ----------------------------------------------------------------
@@ -524,26 +528,26 @@ router.post("/pay", async (req, res) => {
       client_id: MERCHANT_ID,
       client_secret: SALT_KEY,
       client_version: 1,
-      grant_type: "client_credentials"
+      grant_type: "client_credentials",
     };
     const authTokenBody = new URLSearchParams(authTokenPayload).toString();
     console.log("Auth Token Request Body:", authTokenBody);
 
-    const authTokenResponse = await axios.post(
-      AUTH_URL,
-      authTokenBody,
-      {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-      }
-    );
+    const authTokenResponse = await axios.post(AUTH_URL, authTokenBody, {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+    });
 
     console.log("PhonePe Auth Token Response Data:", authTokenResponse.data);
     const authToken = authTokenResponse.data.access_token;
     if (!authToken) {
-      console.error("Failed to get PhonePe Auth Token. No access_token found in response.");
-      return res.status(500).json({ message: "Failed to get PhonePe Auth Token." });
+      console.error(
+        "Failed to get PhonePe Auth Token. No access_token found in response."
+      );
+      return res
+        .status(500)
+        .json({ message: "Failed to get PhonePe Auth Token." });
     }
     console.log("Auth Token successfully received.");
 
@@ -565,9 +569,11 @@ router.post("/pay", async (req, res) => {
     };
 
     const paymentPayloadString = JSON.stringify(paymentPayload);
-    const paymentBase64Payload = Buffer.from(paymentPayloadString).toString("base64");
-    
-    const paymentChecksumString = paymentBase64Payload + "/apis/pg/checkout/v2/pay";
+    const paymentBase64Payload =
+      Buffer.from(paymentPayloadString).toString("base64");
+
+    const paymentChecksumString =
+      paymentBase64Payload + "/apis/pg/checkout/v2/pay";
     console.log("Payment Checksum String:", paymentChecksumString);
     const paymentChecksum = crypto
       .createHmac("sha256", SALT_KEY)
@@ -583,13 +589,14 @@ router.post("/pay", async (req, res) => {
         headers: {
           "Content-Type": "application/json",
           "X-VERIFY": finalPaymentChecksum,
-          "X-AUTHTOKEN": `O-Bearer ${authToken}`, // Correctly prefixing the token
+          "X-AUTHTOKEN": `O-Bearer ${authToken}`, // Using the correct 'O-Bearer ' prefix
         },
       }
     );
 
     console.log("Payment Initiation Response Data:", phonepeResponse.data);
-    const redirectInfo = phonepeResponse.data?.data?.instrumentResponse?.redirectInfo;
+    const redirectInfo =
+      phonepeResponse.data?.data?.instrumentResponse?.redirectInfo;
 
     if (redirectInfo && redirectInfo.url) {
       console.log("Payment initiated successfully. Redirecting user.");
@@ -599,19 +606,25 @@ router.post("/pay", async (req, res) => {
         data: phonepeResponse.data.data,
       });
     } else {
-      console.error("Payment initiation failed: no redirect URL found in response.");
-      res.status(500).json({ 
+      console.error(
+        "Payment initiation failed: no redirect URL found in response."
+      );
+      res.status(500).json({
         message: "Payment initiation failed: no redirect URL.",
-        error: phonepeResponse.data
+        error: phonepeResponse.data,
       });
     }
-
   } catch (error) {
-    console.error("An unexpected error occurred during payment initiation:", error.response?.data || error.message);
-    
-    const errorMessage = error.response?.data?.message || error.message || error;
+    console.error(
+      "An unexpected error occurred during payment initiation:",
+      error.response?.data || error.message
+    );
+
+    const errorMessage =
+      error.response?.data?.message || error.message || error;
     res.status(500).json({
-      message: "Server error during payment initiation. Please try again later.",
+      message:
+        "Server error during payment initiation. Please try again later.",
       error: errorMessage,
     });
   }
@@ -623,10 +636,14 @@ router.post("/redirect-handler", async (req, res) => {
     const { code, transactionId } = req.body;
     console.log("Redirect Handler received a response:", req.body);
     const status = code === "PAYMENT_SUCCESS" ? "success" : "failure";
-    res.redirect(`https://manjunathrajpurohit.in/payment-success?status=${status}&transactionId=${transactionId}`);
+    res.redirect(
+      `https://manjunathrajpurohit.in/payment-success?status=${status}&transactionId=${transactionId}`
+    );
   } catch (error) {
     console.error("Error in redirect handler:", error.message);
-    res.redirect("https://manjunathrajpurohit.in/payment-failure?error=redirect-failed");
+    res.redirect(
+      "https://manjunathrajpurohit.in/payment-failure?error=redirect-failed"
+    );
   }
 });
 
@@ -663,11 +680,19 @@ router.post("/callback", async (req, res) => {
     console.log("Webhook Checksum verified successfully.");
 
     if (state === "COMPLETED") {
-      await Booking.findByIdAndUpdate(merchantTransactionId, { status: "Paid" });
-      console.log(`Booking for transaction ${merchantTransactionId} marked as Paid.`);
+      await Booking.findByIdAndUpdate(merchantTransactionId, {
+        status: "Paid",
+      });
+      console.log(
+        `Booking for transaction ${merchantTransactionId} marked as Paid.`
+      );
     } else {
-      await Booking.findByIdAndUpdate(merchantTransactionId, { status: "Failed" });
-      console.log(`Booking for transaction ${merchantTransactionId} marked as Failed.`);
+      await Booking.findByIdAndUpdate(merchantTransactionId, {
+        status: "Failed",
+      });
+      console.log(
+        `Booking for transaction ${merchantTransactionId} marked as Failed.`
+      );
     }
     res.status(200).send("OK");
   } catch (error) {
@@ -696,19 +721,19 @@ router.get("/status/:transactionId", async (req, res) => {
       SALT_INDEX;
     console.log("Generated X-VERIFY for Status Check:", checkSum);
 
-    const response = await axios.get(
-      `${STATUS_URL}/${transactionId}/status`,
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "X-VERIFY": checkSum,
-        },
-      }
-    );
+    const response = await axios.get(`${STATUS_URL}/${transactionId}/status`, {
+      headers: {
+        "Content-Type": "application/json",
+        "X-VERIFY": checkSum,
+      },
+    });
     console.log("Order Status Response Data:", response.data);
     res.status(200).send(response.data);
   } catch (error) {
-    console.error("Failed to get payment status:", error.response?.data || error.message);
+    console.error(
+      "Failed to get payment status:",
+      error.response?.data || error.message
+    );
     res.status(500).send({
       message: "Failed to get payment status",
       error: error.response?.data || error.message,
@@ -730,9 +755,11 @@ router.post("/refund", async (req, res) => {
     };
 
     const refundPayloadString = JSON.stringify(refundPayload);
-    const refundBase64Payload = Buffer.from(refundPayloadString).toString("base64");
+    const refundBase64Payload =
+      Buffer.from(refundPayloadString).toString("base64");
 
-    const refundChecksumString = refundBase64Payload + "/apis/pg/payments/v2/refund";
+    const refundChecksumString =
+      refundBase64Payload + "/apis/pg/payments/v2/refund";
     console.log("Refund Checksum String:", refundChecksumString);
     const refundChecksum = crypto
       .createHmac("sha256", SALT_KEY)
@@ -754,7 +781,10 @@ router.post("/refund", async (req, res) => {
     console.log("Refund Response Data:", response.data);
     res.status(200).send(response.data);
   } catch (error) {
-    console.error("Failed to process refund:", error.response?.data || error.message);
+    console.error(
+      "Failed to process refund:",
+      error.response?.data || error.message
+    );
     res.status(500).send({
       message: "Failed to process refund",
       error: error.response?.data || error.message,
