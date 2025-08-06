@@ -1,0 +1,498 @@
+// const express = require("express");
+// const crypto = require("crypto");
+// const axios = require("axios");
+// const Booking = require("../models/Booking");
+// const router = express.Router();
+
+// const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID;
+// const SALT_KEY = process.env.PHONEPE_SALT_KEY;
+// const SALT_INDEX = 1;
+// const PHONEPE_HOST_URL = "https://api-preprod.phonepe.com/apis/pg-sandbox";
+
+// // Use your Render domain for callbacks and redirects for production
+// // For local testing, use a tool like ngrok to expose your localhost to the internet.
+// const REDIRECT_URL = "http://localhost:5000/api/phonepe/redirect-handler";
+// const CALLBACK_URL = "https://033fe6ad0cbb.ngrok-free.app/api/phonepe/callback";
+
+// router.post("/pay", async (req, res) => {
+//   try {
+//     const { name, phone, date, timeSlot, amount } = req.body;
+
+//     // This is the key validation check. It expects the data from your frontend.
+//     if (!name || !phone || !date || !timeSlot || !amount) {
+//       console.log("Validation failed: Missing required booking information.", {
+//         name,
+//         phone,
+//         date,
+//         timeSlot,
+//         amount,
+//       });
+//       return res
+//         .status(400)
+//         .json({ message: "Missing required booking information." });
+//     }
+
+//     // Check if the slot is already taken
+//     const existingBooking = await Booking.findOne({
+//       date,
+//       timeSlot,
+//       status: { $in: ["Paid", "Pending"] },
+//     });
+//     if (existingBooking) {
+//       return res.status(409).json({
+//         message: "This slot is already taken. Please choose another one.",
+//       });
+//     }
+
+//     // Create a new booking in 'Pending' status
+//     const newBooking = new Booking({
+//       date,
+//       timeSlot,
+//       name,
+//       phone,
+//       amount,
+//       status: "Pending",
+//     });
+//     await newBooking.save();
+
+//     // The transaction ID will be the booking's MongoDB ID
+//     const merchantTransactionId = newBooking._id.toString();
+
+//     const paymentPayload = {
+//       merchantId: MERCHANT_ID,
+//       merchantTransactionId: merchantTransactionId,
+//       amount: amount * 100, // Amount in paise
+//       redirectUrl: REDIRECT_URL,
+//       redirectMode: "GET",
+//       callbackUrl: CALLBACK_URL,
+//       mobileNumber: phone,
+//       paymentInstrument: {
+//         type: "PAY_PAGE",
+//       },
+//     };
+
+//     const payloadString = JSON.stringify(paymentPayload);
+//     const base64Payload = Buffer.from(payloadString).toString("base64");
+//     const checksum = crypto
+//       .createHash("sha256")
+//       .update(base64Payload + "/pg/v1/pay" + SALT_KEY)
+//       .digest("hex");
+//     const finalChecksum = checksum + "###" + SALT_INDEX;
+
+//     const headers = {
+//       "Content-Type": "application/json",
+//       "X-VERIFY": finalChecksum,
+//     };
+
+//     const phonepeResponse = await axios.post(
+//       `${PHONEPE_HOST_URL}/pg/v1/pay`,
+//       {
+//         request: base64Payload,
+//       },
+//       { headers: { ...headers, "Content-Type": "application/json" } }
+//     );
+
+//     const redirectInfo =
+//       phonepeResponse.data?.data?.instrumentResponse?.redirectInfo;
+
+//     if (redirectInfo && redirectInfo.url) {
+//       console.log("Payment initiated successfully:", merchantTransactionId);
+//       res.status(200).json({
+//         success: true,
+//         message: "Payment initiated successfully",
+//         data: phonepeResponse.data.data,
+//       });
+//     } else {
+//       console.error(
+//         "PhonePe API did not return a redirect URL:",
+//         phonepeResponse.data
+//       );
+//       res
+//         .status(500)
+//         .json({ message: "Payment initiation failed: no redirect URL." });
+//     }
+//   } catch (error) {
+//     console.error(
+//       "Error during PhonePe payment initiation:",
+//       error.response?.data || error.message
+//     );
+//     res.status(500).json({
+//       message:
+//         "Server error during payment initiation. Please try again later.",
+//     });
+//   }
+// });
+
+// router.post("/redirect-handler", async (req, res) => {
+//   try {
+//     // Extract data from PhonePe's POST request
+//     const { code, transactionId } = req.body;
+//     const status = code === "PAYMENT_SUCCESS" ? "success" : "failure";
+
+//     // Perform a GET redirect to your frontend URL
+//     res.redirect(
+//       `http://localhost:5173/payment-success?status=${status}&transactionId=${transactionId}`
+//     );
+//   } catch (error) {
+//     console.error("Redirect handler error:", error);
+//     // If something goes wrong, redirect to a failure page
+//     res.redirect("http://localhost:5173/payment-failure?error=redirect-failed");
+//   }
+// });
+
+// // Webhook endpoint to receive payment status from PhonePe
+// router.post("/callback", async (req, res) => {
+//   console.log("PhonePe callback received!"); // Add this line
+//   try {
+//     const { response } = req.body;
+//     const decodedResponse = JSON.parse(
+//       Buffer.from(response, "base64").toString("utf-8")
+//     );
+//     const { merchantTransactionId, code, state } = decodedResponse.data;
+
+//     console.log(
+//       `Callback received for transaction ID: ${merchantTransactionId}, Status: ${state}`
+//     );
+//     console.log(`Callback status received: ${state}`); // Add this line
+//     // IMPORTANT: Verify checksum to ensure the request is from PhonePe
+//     const checkSum =
+//       crypto
+//         .createHash("sha256")
+//         .update(response + SALT_KEY)
+//         .digest("hex") +
+//       "###" +
+//       SALT_INDEX;
+//     const phonepeChecksum = req.headers["x-verify"];
+
+//     if (checkSum !== phonepeChecksum) {
+//       return res.status(400).send({ message: "Checksum mismatch" });
+//     }
+
+//     // Now, you can update your database based on the 'state'
+//     // Possible states: 'COMPLETED', 'FAILED', 'PENDING'
+//     if (state === "COMPLETED") {
+//       // Find the document and log the result of the update
+//       const updatedBooking = await Booking.findByIdAndUpdate(
+//         merchantTransactionId,
+//         { status: "Paid" },
+//         { new: true } // The 'new: true' option returns the updated document
+//       );
+
+//       if (updatedBooking) {
+//         console.log(
+//           `Transaction ${merchantTransactionId} completed successfully. Database updated.`
+//         );
+//         console.log("Updated booking document:", updatedBooking);
+//       } else {
+//         console.error(
+//           `Error: Booking with ID ${merchantTransactionId} not found in the database.`
+//         );
+//       }
+//     } else {
+//       // Handle other states (e.g., FAILED)
+//       await Booking.findByIdAndUpdate(merchantTransactionId, {
+//         status: "Failed",
+//       });
+//       console.log(
+//         `Transaction ${merchantTransactionId} failed. Database updated to Failed.`
+//       );
+//     }
+
+//     res.status(200).send("OK");
+//   } catch (error) {
+//     console.error("Callback processing error:", error);
+//     res.status(500).send({
+//       message: "Failed to process callback",
+//       error: error.message,
+//     });
+//   }
+// });
+
+// // Endpoint for frontend to check the status of a specific transaction (optional, but good practice)
+// router.get("/status/:transactionId", async (req, res) => {
+//   try {
+//     const { transactionId } = req.params;
+//     const checkSum =
+//       crypto
+//         .createHash("sha256")
+//         .update(
+//           `/pg/v1/status/${PHONEPE_MERCHANT_ID}/${transactionId}` +
+//             PHONEPE_SALT_KEY
+//         )
+//         .digest("hex") +
+//       "###" +
+//       PHONEPE_SALT_INDEX;
+
+//     const response = await axios.get(
+//       `${PHONEPE_STATUS_URL}/${PHONEPE_MERCHANT_ID}/${transactionId}`,
+//       {
+//         headers: {
+//           "Content-Type": "application/json",
+//           "X-VERIFY": checkSum,
+//           "X-MERCHANT-ID": PHONEPE_MERCHANT_ID,
+//         },
+//       }
+//     );
+
+//     res.status(200).send(response.data);
+//   } catch (error) {
+//     console.error("Status check error:", error);
+//     res.status(500).send({
+//       message: "Failed to get payment status",
+//       error: error.message,
+//     });
+//   }
+// });
+
+// module.exports = router;
+
+
+const express = require("express");
+const crypto = require("crypto");
+const axios = require("axios");
+const Booking = require("../models/Booking");
+const router = express.Router();
+
+const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID;
+const SALT_KEY = process.env.PHONEPE_SALT_KEY;
+const SALT_INDEX = 1;
+const PHONEPE_HOST_URL = "https://api.phonepe.com/apis/hermes/pg/v1";
+
+// Use your Render domain for callbacks and redirects for production
+// For local testing, use a tool like ngrok to expose your localhost to the internet.
+const REDIRECT_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/redirect-handler";
+const CALLBACK_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/callback";
+
+router.post("/pay", async (req, res) => {
+  try {
+    const { name, phone, date, timeSlot, amount } = req.body;
+
+    // This is the key validation check. It expects the data from your frontend.
+    if (!name || !phone || !date || !timeSlot || !amount) {
+      console.log("Validation failed: Missing required booking information.", {
+        name,
+        phone,
+        date,
+        timeSlot,
+        amount,
+      });
+      return res
+        .status(400)
+        .json({ message: "Missing required booking information." });
+    }
+
+    // Check if the slot is already taken
+    const existingBooking = await Booking.findOne({
+      date,
+      timeSlot,
+      status: { $in: ["Paid", "Pending"] },
+    });
+    if (existingBooking) {
+      return res.status(409).json({
+        message: "This slot is already taken. Please choose another one.",
+      });
+    }
+
+    // Create a new booking in 'Pending' status
+    const newBooking = new Booking({
+      date,
+      timeSlot,
+      name,
+      phone,
+      amount,
+      status: "Pending",
+    });
+    await newBooking.save();
+
+    // The transaction ID will be the booking's MongoDB ID
+    const merchantTransactionId = newBooking._id.toString();
+
+    const paymentPayload = {
+      merchantId: MERCHANT_ID,
+      merchantTransactionId: merchantTransactionId,
+      amount: amount * 100, // Amount in paise
+      redirectUrl: REDIRECT_URL,
+      redirectMode: "POST",
+      callbackUrl: CALLBACK_URL,
+      mobileNumber: phone,
+      paymentInstrument: {
+        type: "PAY_PAGE",
+      },
+    };
+
+    const payloadString = JSON.stringify(paymentPayload);
+    const base64Payload = Buffer.from(payloadString).toString("base64");
+    const checksum = crypto
+      .createHash("sha256")
+      .update(base64Payload + "/pg/v1/pay" + SALT_KEY)
+      .digest("hex");
+    const finalChecksum = checksum + "###" + SALT_INDEX;
+
+    const headers = {
+      "Content-Type": "application/json",
+      "X-VERIFY": finalChecksum,
+    };
+
+    const phonepeResponse = await axios.post(
+      `${PHONEPE_HOST_URL}/pg/v1/pay`,
+      {
+        request: base64Payload,
+      },
+      { headers: { ...headers, "Content-Type": "application/json" } }
+    );
+
+    const redirectInfo =
+      phonepeResponse.data?.data?.instrumentResponse?.redirectInfo;
+
+    if (redirectInfo && redirectInfo.url) {
+      console.log("Payment initiated successfully:", merchantTransactionId);
+      res.status(200).json({
+        success: true,
+        message: "Payment initiated successfully",
+        data: phonepeResponse.data.data,
+      });
+    } else {
+      console.error(
+        "PhonePe API did not return a redirect URL:",
+        phonepeResponse.data
+      );
+      res
+        .status(500)
+        .json({ message: "Payment initiation failed: no redirect URL." });
+    }
+  } catch (error) {
+    console.error(
+      "Error during PhonePe payment initiation:",
+      error.response?.data || error.message
+    );
+    res.status(500).json({
+      message:
+        "Server error during payment initiation. Please try again later.",
+    });
+  }
+});
+
+router.post("/redirect-handler", async (req, res) => {
+  try {
+    // Extract data from PhonePe's POST request
+    const { code, transactionId } = req.body;
+    const status = code === "PAYMENT_SUCCESS" ? "success" : "failure";
+
+    // Perform a GET redirect to your frontend URL
+    res.redirect(
+      `https://manjunathrajpurohit.in/payment-success?status=${status}&transactionId=${transactionId}`
+    );
+  } catch (error) {
+    console.error("Redirect handler error:", error);
+    // If something goes wrong, redirect to a failure page
+    res.redirect("https://manjunathrajpurohit.in/payment-failure?error=redirect-failed");
+  }
+});
+
+// Webhook endpoint to receive payment status from PhonePe
+router.post("/callback", async (req, res) => {
+  console.log("PhonePe callback received!"); // Add this line
+  try {
+    const { response } = req.body;
+    const decodedResponse = JSON.parse(
+      Buffer.from(response, "base64").toString("utf-8")
+    );
+    const { merchantTransactionId, code, state } = decodedResponse.data;
+
+    console.log(
+      `Callback received for transaction ID: ${merchantTransactionId}, Status: ${state}`
+    );
+    console.log(`Callback status received: ${state}`); // Add this line
+    // IMPORTANT: Verify checksum to ensure the request is from PhonePe
+    const checkSum =
+      crypto
+        .createHash("sha256")
+        .update(response + SALT_KEY)
+        .digest("hex") +
+      "###" +
+      SALT_INDEX;
+    const phonepeChecksum = req.headers["x-verify"];
+
+    if (checkSum !== phonepeChecksum) {
+      return res.status(400).send({ message: "Checksum mismatch" });
+    }
+
+    // Now, you can update your database based on the 'state'
+    // Possible states: 'COMPLETED', 'FAILED', 'PENDING'
+    if (state === "COMPLETED") {
+      // Find the document and log the result of the update
+      const updatedBooking = await Booking.findByIdAndUpdate(
+        merchantTransactionId,
+        { status: "Paid" },
+        { new: true } // The 'new: true' option returns the updated document
+      );
+
+      if (updatedBooking) {
+        console.log(
+          `Transaction ${merchantTransactionId} completed successfully. Database updated.`
+        );
+        console.log("Updated booking document:", updatedBooking);
+      } else {
+        console.error(
+          `Error: Booking with ID ${merchantTransactionId} not found in the database.`
+        );
+      }
+    } else {
+      // Handle other states (e.g., FAILED)
+      await Booking.findByIdAndUpdate(merchantTransactionId, {
+        status: "Failed",
+      });
+      console.log(
+        `Transaction ${merchantTransactionId} failed. Database updated to Failed.`
+      );
+    }
+
+    res.status(200).send("OK");
+  } catch (error) {
+    console.error("Callback processing error:", error);
+    res.status(500).send({
+      message: "Failed to process callback",
+      error: error.message,
+    });
+  }
+});
+
+// Endpoint for frontend to check the status of a specific transaction (optional, but good practice)
+// Endpoint for frontend to check the status of a specific transaction
+router.get("/status/:transactionId", async (req, res) => {
+  try {
+    const { transactionId } = req.params;
+
+    // Correct checksum calculation for the status API
+    const checkSum =
+      crypto
+        .createHash("sha256")
+        .update(
+          `/pg/v1/status/${MERCHANT_ID}/${transactionId}${SALT_KEY}`
+        )
+        .digest("hex") +
+      "###" +
+      SALT_INDEX;
+
+    // Use the correct host URL and defined constants
+    const response = await axios.get(
+      `${PHONEPE_HOST_URL}/pg/v1/status/${MERCHANT_ID}/${transactionId}`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "X-VERIFY": checkSum,
+          "X-MERCHANT-ID": MERCHANT_ID,
+        },
+      }
+    );
+
+    res.status(200).send(response.data);
+  } catch (error) {
+    console.error("Status check error:", error.response?.data || error.message);
+    res.status(500).send({
+      message: "Failed to get payment status",
+      error: error.message,
+    });
+  }
+});
+module.exports = router;

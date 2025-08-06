@@ -1,33 +1,28 @@
-// const express = require("express");
-// const router = express.Router();
-// const { bookSlot, getBookedSlots ,getAllBookings,} = require("../controllers/bookingController");
-
-// router.post("/book", bookSlot);
-// router.get("/booked/:date", getBookedSlots);
-// router.get("/", getAllBookings);
-
-// module.exports = router;
-
 // backend/routes/bookingRoute.js
 
 const express = require("express");
 const router = express.Router();
 const { bookSlot, getBookedSlots, getAllBookings } = require("../controllers/bookingController"); // Correct path to your bookingController
 
-router.post("/book", bookSlot);
+// router.post("/book", bookSlot);
 router.get("/booked/:date", getBookedSlots);
 router.get("/", getAllBookings); // Assuming you want a route to get all bookings for admin
 
 module.exports = router;
 
-// after phonepe getway
+// phonep setup
 
 // const express = require("express");
 // const router = express.Router();
-// const { getBookedSlots ,getAllBookings } = require("../controllers/bookingController"); // Removed bookSlot
+// const bookingController = require("../controllers/bookingController");
 
-// // router.post("/book", bookSlot); // <--- REMOVE THIS LINE
-// router.get("/booked/:date", getBookedSlots);
-// router.get("/", getAllBookings);
+// // Get all bookings
+// router.get("/", bookingController.getAllBookings);
+
+// // Get booked slots for a specific date (only paid bookings)
+// router.get("/booked/:date", bookingController.getBookedSlots);
+
+// // Legacy booking endpoint (now disabled - use payment flow instead)
+// router.post("/book", bookingController.bookSlot);
 
 // module.exports = router;
