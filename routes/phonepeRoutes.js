@@ -520,7 +520,6 @@ router.post("/pay", async (req, res) => {
     const authTokenPayloadString = JSON.stringify(authTokenPayload);
     const authTokenBase64Payload = Buffer.from(authTokenPayloadString).toString("base64");
     
-    // Checksum for Auth Token API
     const authTokenChecksum = crypto
       .createHash("sha256")
       .update(authTokenBase64Payload + "/apis/identity-manager/v1/oauth/token" + SALT_KEY)
@@ -562,7 +561,6 @@ router.post("/pay", async (req, res) => {
     const paymentPayloadString = JSON.stringify(paymentPayload);
     const paymentBase64Payload = Buffer.from(paymentPayloadString).toString("base64");
     
-    // Checksum for Create Payment API
     const paymentChecksum = crypto
       .createHash("sha256")
       .update(paymentBase64Payload + "/apis/pg/checkout/v2/pay" + SALT_KEY)
@@ -597,6 +595,9 @@ router.post("/pay", async (req, res) => {
     }
 
   } catch (error) {
+    // THIS CATCH BLOCK IS UPDATED TO LOG THE FULL ERROR OBJECT
+    console.error("An unexpected error occurred during payment initiation:", error);
+    
     const errorMessage = error.response?.data?.message || error.message || error;
     res.status(500).json({
       message: "Server error during payment initiation. Please try again later.",
