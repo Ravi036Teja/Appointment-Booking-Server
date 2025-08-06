@@ -517,7 +517,9 @@ router.post("/pay", async (req, res) => {
     // ----------------------
     // STEP 1: Get Auth Token (using Basic Authentication with Client Secret)
     // ----------------------
-    const authTokenPayload = {
+     const authTokenPayload = {
+      client_id: MERCHANT_ID,     // Add client_id
+      client_secret: SALT_KEY,    // Add client_secret
       client_version: 1,
       grant_type: "client_credentials"
     };
@@ -526,13 +528,22 @@ router.post("/pay", async (req, res) => {
     // The Authorization header uses a Base64 encoded string of `clientId:clientSecret`.
     const authHeaderValue = Buffer.from(`${MERCHANT_ID}:${SALT_KEY}`).toString('base64');
     
+    // As per the documentation you provided, this endpoint requires a checksum.
+    const stringToHash = authTokenBody + "/apis/identity-manager/v1/oauth/token";
+    const authTokenChecksum = crypto
+      .createHmac("sha256", SALT_KEY)
+      .update(stringToHash)
+      .digest("hex");
+    const finalAuthTokenChecksum = authTokenChecksum + "###" + SALT_INDEX;
+
     const authTokenResponse = await axios.post(
       AUTH_URL,
       authTokenBody,
       {
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
-          "Authorization": `Basic ${authHeaderValue}`
+          "Authorization": `Basic ${authHeaderValue}`,
+          "X-VERIFY": finalAuthTokenChecksum,
         },
       }
     );
