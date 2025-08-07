@@ -87,6 +87,6 @@ bookingSchema.pre('save', function(next) {
 
 // This index is crucial for performance and prevents true duplicates, but the `status`-based
 // check in your business logic is what handles the temporary lock.
-bookingSchema.index({ date: 1, timeSlot: 1 });
+// bookingSchema.index({ date: 1, timeSlot: 1 });
 
 module.exports = mongoose.model('Booking', bookingSchema);
