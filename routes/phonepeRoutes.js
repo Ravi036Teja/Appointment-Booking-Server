@@ -679,7 +679,7 @@ const client = StandardCheckoutClient.getInstance(MERCHANT_ID, CLIENT_SECRET, CL
 // Production URLs for callbacks and redirects.
 // NOTE: Use your actual production domain, not the Render URL, for the client-side redirect.
 const REDIRECT_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/redirect-handler";
-const CALLBACK_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/callback";
+const CALLBACK_URL_PATH = "/bookings/phonepe-callback";
 
 // --- Endpoint to initiate a payment ---
 router.post("/pay", async (req, res) => {
@@ -719,6 +719,7 @@ router.post("/pay", async (req, res) => {
             .merchantOrderId(merchantOrderId)
             .amount(amount * 100)
             .redirectUrl(REDIRECT_URL)
+            .callbackUrl(`https://appointment-booking-server-o5c5.onrender.com/api${CALLBACK_URL_PATH}`)
             .build();
 
         const response = await client.pay(payRequest);
@@ -790,39 +791,52 @@ router.get("/redirect-handler", async (req, res) => {
 
 // --- Webhook endpoint to receive payment status from PhonePe (POST request) ---
 // THIS IS THE MOST RELIABLE SOURCE OF TRUTH.
-router.post("/callback", async (req, res) => {
+router.post(CALLBACK_URL_PATH, async (req, res) => {
   try {
     const callbackResponse = client.validateCallback(req.headers.authorization, req.body);
 
-    if (!callbackResponse || callbackResponse.payload.state === 'FAILED') {
-      console.error("Webhook validation failed or payment failed.");
-      return res.status(400).send({ message: "Invalid callback or failed payment" });
+    if (!callbackResponse) {
+      console.error("Webhook validation failed.");
+      return res.status(400).send({ message: "Invalid callback signature" });
     }
-    
-    const { merchantOrderId, state } = callbackResponse.payload;
 
-    if (state === "COMPLETED") {
-      // Update the booking to "Paid" if the state is completed
-      await Booking.findByIdAndUpdate(merchantOrderId, { status: "Paid" });
-      // Send confirmation message to the user here
-      // Find the booking to get the user's details for the message
-      const confirmedBooking = await Booking.findById(merchantOrderId);
-      if (confirmedBooking) {
-          try {
-              // Assuming your WhatsApp sender function is correct
-              const message = `🙏 Hi ${confirmedBooking.name}, your appointment for ${dayjs(confirmedBooking.date).format("YYYY-MM-DD")} at ${confirmedBooking.timeSlot} is now confirmed.`;
-              await sendWhatsAppMessage(confirmedBooking.phone, message);
-              console.log("WhatsApp message sent successfully for booking:", merchantOrderId);
-          } catch (whatsappErr) {
-              console.error("Failed to send WhatsApp message:", whatsappErr);
-          }
-      }
-      console.log(`Booking for transaction ${merchantOrderId} marked as Paid.`);
-    } else {
-      // Update the booking to "Failed" for other states
-      await Booking.findByIdAndUpdate(merchantOrderId, { status: "Failed" });
-      console.log(`Booking for transaction ${merchantOrderId} marked as Failed.`);
-    }
+    const { merchantOrderId, state } = callbackResponse.payload;
+    console.log(`Callback for order ${merchantOrderId} received with state: ${state}`);
+
+    // Fetch the booking to prevent double-updates
+    const booking = await Booking.findById(merchantOrderId);
+    if (!booking) {
+        console.error(`Booking with ID ${merchantOrderId} not found.`);
+        return res.status(404).send("Booking not found");
+    }
+
+    if (booking.status === "Paid" || booking.status === "Failed") {
+        console.log(`Booking ${merchantOrderId} already processed. State: ${booking.status}`);
+        return res.status(200).send("OK");
+    }
+
+    if (state === "COMPLETED") {
+        // Update the booking to "Paid"
+        booking.status = "Paid";
+        await booking.save();
+
+        console.log(`Booking for transaction ${merchantOrderId} marked as Paid.`);
+
+        // Send confirmation message
+        try {
+            const message = `🙏 Hi ${booking.name}, your appointment for ${booking.date} at ${booking.timeSlot} is now confirmed.`;
+            // Assuming sendWhatsAppMessage is correctly defined
+            // await sendWhatsAppMessage(booking.phone, message);
+            console.log("WhatsApp message sent successfully for booking:", merchantOrderId);
+        } catch (whatsappErr) {
+            console.error("Failed to send WhatsApp message:", whatsappErr);
+        }
+    } else {
+        // Update the booking to "Failed" for any other state
+        booking.status = "Failed";
+        await booking.save();
+        console.log(`Booking for transaction ${merchantOrderId} marked as Failed.`);
+    }
 
     res.status(200).send("OK");
   } catch (error) {
@@ -831,7 +845,6 @@ router.post("/callback", async (req, res) => {
   }
 });
 
-// The rest of your router code (status, refund) remains the same and is correct.
 // --- Endpoint to check the status of a specific transaction ---
 router.get("/status/:transactionId", async (req, res) => {
   try {
