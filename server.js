@@ -52,6 +52,9 @@ const phonepeRoutes = require('./routes/phonepeRoutes');
 const path = require('path');
 connectDB();
 
+//  Require the cron job file to start the scheduler
+require('./cron');
+
 const app = express();
 app.use(cors());
 app.use(express.json());
