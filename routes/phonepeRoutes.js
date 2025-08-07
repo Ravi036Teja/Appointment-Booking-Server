@@ -751,28 +751,42 @@ router.post("/pay", async (req, res) => {
 // --- Endpoint to handle PhonePe's redirect after payment ---
 // This endpoint is for user experience. The definitive status comes from the callback.
 router.get("/redirect-handler", async (req, res) => {
-  try {
-    const { transactionId } = req.query;
+  try {
+    const { transactionId } = req.query;
 
-    if (!transactionId) {
-      console.error("No transactionId found in redirect handler.");
-      return res.redirect("https://manjunathrajpurohit.in/payment-failure?error=no-transaction-id");
-    }
+    if (!transactionId) {
+      console.error("No transactionId found in redirect handler.");
+      // Redirect to a specific failure page if no transaction ID is present
+      return res.redirect("https://manjunathrajpurohit.in/payment-failure?error=no-transaction-id");
+    }
 
-    // Get the final status directly from PhonePe's API for the best user experience.
-    const response = await client.getOrderStatus(transactionId);
-    const transactionState = response.payload.state;
-    
-    const status = transactionState === "COMPLETED" ? "success" : "failure";
+    // Call the PhonePe API to get the definitive transaction status
+    const response = await client.getOrderStatus(transactionId);
+    const transactionState = response.payload.state;
+    console.log("Final payment status from PhonePe for transaction", transactionId, ":", transactionState);
 
-    // Redirect to the frontend with the final status.
-    res.redirect(`https://manjunathrajpurohit.in/payment-result?status=${status}&transactionId=${transactionId}`);
-  } catch (error) {
-    console.error("Error in redirect handler during status check:", error.message);
-    res.redirect("https://manjunathrajpurohit.in/payment-failure?error=redirect-failed");
-  }
+    let status;
+    if (transactionState === "COMPLETED") {
+      status = "success";
+    } else if (transactionState === "PENDING") {
+      // Handle the pending state separately
+      status = "pending";
+    } else {
+      // All other states (FAILED, CANCELLED, etc.) are treated as a failure for the user
+      status = "failure";
+    }
+
+    // Redirect the user to the frontend with the determined status
+    // It's recommended to have a dedicated page to display the result.
+    res.redirect(`https://manjunathrajpurohit.in/payment-result?status=${status}&transactionId=${transactionId}`);
+
+  } catch (error) {
+    // Catch any errors during the API call itself
+    console.error("Error in redirect handler during status check:", error.response?.data || error.message);
+    // Redirect to a generic error page on the frontend
+    res.redirect(`https://manjunathrajpurohit.in/payment-result?status=failure&error=redirect-failed`);
+  }
 });
-
 
 // --- Webhook endpoint to receive payment status from PhonePe (POST request) ---
 // THIS IS THE MOST RELIABLE SOURCE OF TRUTH.
