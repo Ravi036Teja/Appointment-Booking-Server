@@ -457,7 +457,7 @@ const client = StandardCheckoutClient.getInstance(MERCHANT_ID, CLIENT_SECRET, CL
 // NOTE: The CALLBACK_URL is configured in the PhonePe dashboard, so we don't need to pass it here.
 const REDIRECT_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/redirect-handler";
 // const CALLBACK_URL_PATH = "/bookings/phonepe-callback"; // <-- This is no longer needed
-
+const CALLBACK_URL = "https://appointment-booking-server-o5c5.onrender.com/api/bookings/phonepe-callback";
 // --- Endpoint to initiate a payment ---
 router.post("/pay", async (req, res) => {
     try {
@@ -559,7 +559,7 @@ router.get("/redirect-handler", async (req, res) => {
 // --- Webhook endpoint to receive payment status from PhonePe (POST request) ---
 // THIS IS THE MOST RELIABLE SOURCE OF TRUTH.
 // This route should match the callback URL configured in your PhonePe dashboard.
-router.post("/callback", async (req, res) => {
+router.post("/bookings/phonepe-callback", async (req, res) => {
     try {
         const callbackResponse = client.validateCallback(req.headers.authorization, req.body);
 
