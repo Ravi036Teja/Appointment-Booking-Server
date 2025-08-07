@@ -559,53 +559,64 @@ router.get("/redirect-handler", async (req, res) => {
 // --- Webhook endpoint to receive payment status from PhonePe (POST request) ---
 // THIS IS THE MOST RELIABLE SOURCE OF TRUTH.
 // This route should match the callback URL configured in your PhonePe dashboard.
-router.post("/bookings/phonepe-callback", async (req, res) => {
+// A helper function to validate the webhook and update the booking status
+const handlePhonePeCallback = async (req, res) => {
     try {
-        const callbackResponse = client.validateCallback(req.headers.authorization, req.body);
+        const authorizationHeaderData = req.header('X-Verify');
+        const phonepeS2SCallbackResponseBodyString = JSON.stringify(req.body);
 
-        if (!callbackResponse) {
-            console.error("Webhook validation failed.");
-            return res.status(400).send({ message: "Invalid callback signature" });
-        }
-        
-        const { merchantOrderId, state } = callbackResponse.payload;
-        console.log(`Callback for order ${merchantOrderId} received with state: ${state}`);
+        // Replace with your configured username and password
+        const usernameConfigured = process.env.PHONEPE_MERCHANT_USERNAME;
+        const passwordConfigured = process.env.PHONEPE_MERCHANT_PASSWORD;
 
-        const booking = await Booking.findById(merchantOrderId);
-        if (!booking) {
-            console.error(`Booking with ID ${merchantOrderId} not found.`);
-            return res.status(404).send("Booking not found");
-        }
+        // Use the SDK to validate the callback
+        const callbackResponse = client.validateCallback(
+            usernameConfigured,
+            passwordConfigured,
+            authorizationHeaderData,
+            phonepeS2SCallbackResponseBodyString
+        );
 
-        if (booking.status === "Paid" || booking.status === "Failed") {
-            console.log(`Booking ${merchantOrderId} already processed. State: ${booking.status}`);
-            return res.status(200).send("OK");
-        }
+        if (callbackResponse && callbackResponse.success) {
+            const transactionId = callbackResponse.payload.transactionId;
+            const state = callbackResponse.payload.state;
+            const merchantTransactionId = callbackResponse.payload.merchantTransactionId;
 
-        if (state === "COMPLETED") {
-            booking.status = "Paid";
-            await booking.save();
-            console.log(`Booking for transaction ${merchantOrderId} marked as Paid.`);
+            const booking = await Booking.findOne({ transactionId: merchantTransactionId });
 
-            try {
-                // Assuming your WhatsApp sender function is correct
-                // await sendWhatsAppMessage(booking.phone, message);
-                console.log("WhatsApp message sent successfully for booking:", merchantOrderId);
-            } catch (whatsappErr) {
-                console.error("Failed to send WhatsApp message:", whatsappErr);
+            if (!booking) {
+                console.error('Booking not found for transactionId:', merchantTransactionId);
+                return res.status(404).send('Booking not found');
+            }
+
+            if (state === 'COMPLETED') {
+                booking.status = 'Paid';
+                booking.paymentDetails = {
+                    ...booking.paymentDetails,
+                    phonepeTransactionId: transactionId,
+                };
+                await booking.save();
+                console.log(`Booking ${booking.name} for ${booking.date} at ${booking.timeSlot} updated to Paid.`);
+                // Send WhatsApp message and other success notifications
+                res.status(200).json({ success: true, message: "Payment successful and booking updated." });
+            } else {
+                booking.status = 'Failed';
+                await booking.save();
+                console.log(`Booking for ${booking.name} failed with state: ${state}. Status updated to Failed.`);
+                res.status(200).json({ success: true, message: "Payment failed, booking status updated." });
             }
         } else {
-            booking.status = "Failed";
-            await booking.save();
-            console.log(`Booking for transaction ${merchantOrderId} marked as Failed.`);
+            console.error('Callback validation failed:', callbackResponse);
+            res.status(400).send('Invalid callback');
         }
-
-        res.status(200).send("OK");
     } catch (error) {
-        console.error("Failed to process webhook callback:", error.message);
-        res.status(500).send({ message: "Failed to process callback", error: error.message });
+        console.error("Error handling PhonePe callback:", error);
+        res.status(500).send('Internal Server Error');
     }
-});
+};
+
+// Route for PhonePe callback
+router.post('/bookings/phonepe-callback', handlePhonePeCallback);
 
 // The rest of your router code (status, refund) remains the same and is correct.
 router.get("/status/:transactionId", async (req, res) => {
