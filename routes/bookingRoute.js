@@ -22,7 +22,7 @@ router.get("/", bookingController.getAllBookings);
 // Get booked slots for a specific date (only paid bookings)
 router.get("/booked/:date", bookingController.getBookedSlots);
 
-// Legacy booking endpoint (now disabled - use payment flow instead)
-router.post("/book", bookingController.bookSlot);
+// The legacy '/book' endpoint has been removed.
+// All booking initiation now happens through the '/api/phonepe/pay' endpoint.
 
 module.exports = router;
