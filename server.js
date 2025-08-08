@@ -48,7 +48,6 @@ dotenv.config();
 const express = require("express");
 const cors = require("cors");
 const connectDB = require("./config/db");
-const phonepeRoutes = require('./routes/phonepeRoutes');
 const path = require('path');
 connectDB();
 
@@ -68,8 +67,7 @@ app.use("/api/bookings", require("./routes/bookingRoute"));
 app.use("/api/admin", require("./routes/adminRoutes"));
 app.use("/api/blocked", require("./routes/blockedSlotRoute"));
 app.use('/api/gallery', require("./routes/ImageRoutes"));
-// app.use("/api/payments", require("./routes/paymentRoutes"));
-app.use('/api/phonepe', phonepeRoutes);
+app.use('/api/phonepe', require("./routes/phonepeRoutes"));
 
 // Root route
 app.get("/", (req, res) => {
