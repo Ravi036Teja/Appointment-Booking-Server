@@ -947,11 +947,10 @@ const Booking = require("../models/Booking"); // Adjust path as necessary
 const router = express.Router();
 
 // --- Configuration ---
-// It's crucial to store these credentials in environment variables for security.
 const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID;
 const CLIENT_SECRET = process.env.PHONEPE_SALT_KEY;
 const CLIENT_VERSION = 1;
-const ENV = Env.PRODUCTION; // Change to Env.PRODUCTION for live environment
+const ENV = Env.PRODUCTION;
 
 const client = StandardCheckoutClient.getInstance(MERCHANT_ID, CLIENT_SECRET, CLIENT_VERSION, ENV);
 
@@ -1035,14 +1034,14 @@ router.get("/redirect-handler", async (req, res) => {
 
         if (!merchantTransactionId) {
             console.error("No merchantTransactionId or transactionId found in redirect handler.");
-            return res.redirect("https://manjunathrajpurohit.in/payment-failure?error=no-transaction-id");
+            return res.redirect("https://manjunathrajpurohit.in/payment-failed?error=no-transaction-id");
         }
         
         const booking = await Booking.findById(merchantTransactionId);
         
         if (!booking) {
             console.error("Booking not found for merchantTransactionId:", merchantTransactionId);
-            return res.redirect(`https://manjunathrajpurohit.in/payment-failure?error=booking-not-found&transactionId=${merchantTransactionId}`);
+            return res.redirect(`https://manjunathrajpurohit.in/payment-failed?error=booking-not-found&transactionId=${merchantTransactionId}`);
         }
 
         console.log(`Attempting to check status for merchantTransactionId: ${merchantTransactionId}`);
@@ -1052,7 +1051,7 @@ router.get("/redirect-handler", async (req, res) => {
             console.log("Status Check API Response:", JSON.stringify(statusResponse, null, 2));
         } catch (apiError) {
             console.error("Failed to get transaction status from PhonePe API.", apiError.response?.data || apiError.message);
-            return res.redirect(`https://manjunathrajpurohit.in/payment-failure?error=status-check-api-failed&transactionId=${merchantTransactionId}`);
+            return res.redirect(`https://manjunathrajpurohit.in/payment-failed?error=status-check-api-failed&transactionId=${merchantTransactionId}`);
         }
 
         if (statusResponse && statusResponse.success && statusResponse.data) {
@@ -1074,7 +1073,7 @@ router.get("/redirect-handler", async (req, res) => {
             res.redirect(`https://manjunathrajpurohit.in/payment-result?status=${finalStatus}&transactionId=${merchantTransactionId}`);
         } else {
             console.error("Status check from PhonePe API failed, redirecting to failure page.");
-            res.redirect(`https://manjunathrajpurohit.in/payment-failure?error=status-check-failed&transactionId=${merchantTransactionId}`);
+            res.redirect(`https://manjunathrajpurohit.in/payment-failed?error=status-check-failed&transactionId=${merchantTransactionId}`);
         }
 
     } catch (error) {
@@ -1087,10 +1086,12 @@ router.get("/redirect-handler", async (req, res) => {
 router.post('/bookings/phonepe-callback', async (req, res) => {
     try {
         // Log the raw webhook data for debugging and auditing purposes
-        console.log("Webhook received. Headers:", req.headers);
-        console.log("Webhook body:", JSON.stringify(req.body, null, 2));
+        console.log("--- PHONEPE WEBHOOK RECEIVED ---");
+        console.log("Headers:", req.headers);
+        console.log("Raw Body:", JSON.stringify(req.body, null, 2));
+        console.log("---------------------------------");
 
-        const authorizationHeaderData = req.header('X-Verify');
+        const authorizationHeaderData = req.header('X-VERIFY');
         const phonepeS2SCallbackResponseBodyString = JSON.stringify(req.body);
 
         const usernameConfigured = process.env.PHONEPE_MERCHANT_USERNAME;
@@ -1134,7 +1135,6 @@ router.post('/bookings/phonepe-callback', async (req, res) => {
                 console.log(`Webhook received for state: ${state}. No status change necessary.`);
             }
 
-            // Acknowledge receipt of the webhook
             res.status(200).json({ success: true, message: "Webhook processed." });
         } else {
             console.error('Callback validation failed:', callbackResponse);
