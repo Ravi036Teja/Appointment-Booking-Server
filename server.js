@@ -67,7 +67,7 @@ app.use("/api/bookings", require("./routes/bookingRoute"));
 app.use("/api/admin", require("./routes/adminRoutes"));
 app.use("/api/blocked", require("./routes/blockedSlotRoute"));
 app.use('/api/gallery', require("./routes/ImageRoutes"));
-app.use('/api/phonepe', require("./routes/phonepeRoutes"));
+app.use('/api/payment', require("./routes/phonepeRoutes"));
 
 // Root route
 app.get("/", (req, res) => {

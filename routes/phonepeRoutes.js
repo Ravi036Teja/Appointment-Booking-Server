@@ -306,7 +306,7 @@
 //     if (!transactionId) {
 //       console.error("No transactionId found in redirect handler.");
 //       // Redirect to a specific failure page if no transaction ID is present
-//       return res.redirect("https://manjunathrajpurohit.in/payment-failure?error=no-transaction-id");
+//       return res.redirect("http://localhost:5173/payment-failure?error=no-transaction-id");
 //     }
 
 //     // Call the PhonePe API to get the definitive transaction status
@@ -689,256 +689,6 @@
 
 // module.exports = router;
 
-// const express = require("express");
-// const crypto = require("crypto");
-// const { randomUUID } = require('crypto');
-// const { StandardCheckoutClient, Env, StandardCheckoutPayRequest, RefundRequest } = require('pg-sdk-node');
-// const Booking = require("../models/Booking");
-// const router = express.Router();
-
-// // --- Configuration ---
-// // It's crucial to store these credentials in environment variables for security.
-// const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID;
-// const CLIENT_SECRET = process.env.PHONEPE_SALT_KEY;
-// const CLIENT_VERSION = 1;
-// const ENV = Env.PRODUCTION; // Change to Env.PRODUCTION for live environment
-
-// const client = StandardCheckoutClient.getInstance(MERCHANT_ID, CLIENT_SECRET, CLIENT_VERSION, ENV);
-
-// // Production URLs for callbacks and redirects.
-// const REDIRECT_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/redirect-handler";
-// const CALLBACK_URL = "https://appointment-booking-server-o5c5.onrender.com/api/bookings/phonepe-callback";
-
-// // --- Endpoint to initiate a payment ---
-// router.post("/pay", async (req, res) => {
-//     try {
-//         const { name, phone, date, timeSlot, amount } = req.body;
-
-//         if (!name || !phone || !date || !timeSlot || !amount) {
-//             console.error("Missing required booking information for payment initiation.");
-//             return res.status(400).json({ message: "Missing required booking information." });
-//         }
-
-//         // 1. Check for existing booking (pending or paid) to prevent duplicate transactions
-//         const existingBooking = await Booking.findOne({
-//             date,
-//             timeSlot,
-//             status: { $in: ["Paid", "Pending"] },
-//         });
-//         if (existingBooking) {
-//             console.warn(`Attempted to book an already taken slot for ${date} at ${timeSlot}.`);
-//             return res.status(409).json({ message: "This slot is already taken. Please choose another one." });
-//         }
-
-//         // 2. Create a new booking with 'Pending' status.
-//         const newBooking = new Booking({
-//             date,
-//             timeSlot,
-//             name,
-//             phone,
-//             amount,
-//             status: "Pending",
-//         });
-//         await newBooking.save();
-//         console.log(`New booking created with ID: ${newBooking._id}`);
-
-//         const merchantOrderId = newBooking._id.toString();
-
-//         // 3. Initiate payment via PhonePe SDK
-//         const payRequest = StandardCheckoutPayRequest.builder()
-//             .merchantOrderId(merchantOrderId)
-//             .amount(amount * 100) // The amount is in paise
-//             .redirectUrl(REDIRECT_URL)
-//             .build();
-
-//         console.log(`Initiating PhonePe payment for merchantOrderId: ${merchantOrderId} with amount: ${amount}`);
-//         const response = await client.pay(payRequest);
-
-//         if (response && response.redirectUrl) {
-//             console.log(`Payment initiation successful. Redirecting user to: ${response.redirectUrl}`);
-//             res.status(200).json({
-//                 success: true,
-//                 message: "Payment initiated successfully",
-//                 redirectUrl: response.redirectUrl,
-//             });
-//         } else {
-//             console.error(`Payment initiation failed for merchantOrderId: ${merchantOrderId}. No redirect URL found. Response: ${JSON.stringify(response)}`);
-//             await Booking.findByIdAndUpdate(merchantOrderId, { status: "Failed" });
-//             res.status(500).json({
-//                 message: "Payment initiation failed: no redirect URL.",
-//                 error: response
-//             });
-//         }
-
-//     } catch (error) {
-//         console.error("An unexpected error occurred during payment initiation:", error.response?.data || error.message);
-//         res.status(500).json({
-//             message: "Server error during payment initiation. Please try again later.",
-//             error: error.response?.data?.message || error.message || error,
-//         });
-//     }
-// });
-
-// // --- Endpoint to handle PhonePe's redirect after payment ---
-// router.get("/redirect-handler", async (req, res) => {
-//     try {
-//         console.log("PhonePe Redirect Query Params:", req.query);
-        
-//         // Use a more flexible approach to find the transaction ID
-//         const merchantTransactionId = req.query.transactionId || req.query.merchantTransactionId;
-
-//         if (!merchantTransactionId) {
-//             console.error("No merchantTransactionId or transactionId found in redirect handler.");
-//             return res.redirect("https://manjunathrajpurohit.in/payment-failure?error=no-transaction-id");
-//         }
-        
-//         // Find the booking in the database first
-//         const booking = await Booking.findById(merchantTransactionId);
-        
-//         if (!booking) {
-//             console.error("Booking not found for merchantTransactionId:", merchantTransactionId);
-//             return res.redirect(`https://manjunathrajpurohit.in/payment-failure?error=booking-not-found&transactionId=${merchantTransactionId}`);
-//         }
-
-//         console.log(`Attempting to check status for merchantTransactionId: ${merchantTransactionId}`);
-//         const statusResponse = await client.checkStatus(merchantTransactionId);
-//         console.log("Status Check API Response:", JSON.stringify(statusResponse, null, 2));
-
-//         if (statusResponse && statusResponse.success && statusResponse.data) {
-//             const transactionState = statusResponse.data.state;
-
-//             console.log("Final payment status for transaction", merchantTransactionId, ":", transactionState);
-
-//             let finalStatus;
-//             if (transactionState === "COMPLETED") {
-//                 booking.status = 'Paid';
-//                 finalStatus = "success";
-//             } else {
-//                 booking.status = 'Failed';
-//                 finalStatus = "failure";
-//             }
-//             await booking.save();
-//             console.log(`Booking status updated to ${booking.status} based on redirect handler.`);
-            
-//             res.redirect(`https://manjunathrajpurohit.in/payment-result?status=${finalStatus}&transactionId=${merchantTransactionId}`);
-//         } else {
-//             console.error("Failed to get transaction status from PhonePe API. Will rely on webhook for final status.");
-//             res.redirect(`https://manjunathrajpurohit.in/payment-failure?error=status-check-failed&transactionId=${merchantTransactionId}`);
-//         }
-
-//     } catch (error) {
-//         console.error("Error in redirect handler during status check:", error.response?.data || error.message);
-//         res.redirect(`https://manjunathrajpurohit.in/payment-result?status=failure&error=redirect-handler-error`);
-//     }
-// });
-
-// // --- Webhook endpoint to receive payment status from PhonePe (POST request) ---
-// router.post('/bookings/phonepe-callback', async (req, res) => {
-//     try {
-//         const authorizationHeaderData = req.header('X-Verify');
-//         const phonepeS2SCallbackResponseBodyString = JSON.stringify(req.body);
-        
-//         console.log("Webhook received. Headers:", req.headers);
-//         console.log("Webhook body:", phonepeS2SCallbackResponseBodyString);
-
-//         // Your configured credentials for webhook validation
-//         const usernameConfigured = process.env.PHONEPE_MERCHANT_USERNAME;
-//         const passwordConfigured = process.env.PHONEPE_MERCHANT_PASSWORD;
-
-//         // Use the SDK's built-in validation method
-//         const callbackResponse = client.validateCallback(
-//             usernameConfigured,
-//             passwordConfigured,
-//             authorizationHeaderData,
-//             phonepeS2SCallbackResponseBodyString
-//         );
-//         console.log("Webhook validation response:", JSON.stringify(callbackResponse, null, 2));
-
-//         if (callbackResponse && callbackResponse.success) {
-//             const state = callbackResponse.payload.state;
-//             const merchantTransactionId = callbackResponse.payload.merchantTransactionId;
-            
-//             console.log(`Webhook validated. State: ${state}, Merchant Transaction ID: ${merchantTransactionId}`);
-            
-//             const booking = await Booking.findById(merchantTransactionId);
-
-//             if (!booking) {
-//                 console.error('Booking not found for merchantTransactionId:', merchantTransactionId);
-//                 return res.status(404).send('Booking not found');
-//             }
-
-//             // Only update if the new status is more definitive
-//             if (state === 'COMPLETED' && booking.status !== 'Paid') {
-//                 booking.status = 'Paid';
-//                 booking.paymentDetails = {
-//                     ...booking.paymentDetails,
-//                     phonepeTransactionId: callbackResponse.payload.transactionId,
-//                 };
-//                 await booking.save();
-//                 console.log(`Booking ${booking.name} updated to Paid via webhook.`);
-//             } else if (state === 'FAILED' && booking.status !== 'Failed') {
-//                 booking.status = 'Failed';
-//                 await booking.save();
-//                 console.log(`Booking for ${booking.name} failed via webhook with state: ${state}. Status updated to Failed.`);
-//             } else {
-//                 console.log(`Webhook received for state: ${state}. No status change necessary or status is already up-to-date.`);
-//             }
-            
-//             res.status(200).json({ success: true, message: "Webhook processed." });
-//         } else {
-//             console.error('Callback validation failed:', callbackResponse);
-//             res.status(400).send('Invalid callback');
-//         }
-//     } catch (error) {
-//         console.error("Error handling PhonePe callback:", error);
-//         res.status(500).send('Internal Server Error');
-//     }
-// });
-
-// // --- Endpoint to get payment status from PhonePe ---
-// router.get("/status/:transactionId", async (req, res) => {
-//     try {
-//         const { transactionId } = req.params;
-//         console.log("Checking status for transaction ID:", transactionId);
-
-//         const response = await client.checkStatus(transactionId);
-//         console.log("Order Status Response Data:", JSON.stringify(response, null, 2));
-//         res.status(200).send(response);
-//     } catch (error) {
-//         console.error("Failed to get payment status:", error.response?.data || error.message);
-//         res.status(500).send({
-//             message: "Failed to get payment status",
-//             error: error.response?.data || error.message,
-//         });
-//     }
-// });
-
-// // --- Endpoint for Refund API ---
-// router.post("/refund", async (req, res) => {
-//     try {
-//         const { originalMerchantOrderId, amount } = req.body;
-//         const merchantRefundId = randomUUID();
-//         console.log("Starting refund for transaction:", originalMerchantOrderId);
-
-//         const refundRequest = RefundRequest.builder()
-//             .amount(amount * 100) // Amount in paise
-//             .merchantRefundId(merchantRefundId)
-//             .originalMerchantOrderId(originalMerchantOrderId)
-//             .build();
-
-//         const response = await client.refund(refundRequest);
-//         console.log("Refund Response Data:", JSON.stringify(response, null, 2));
-//         res.status(200).send(response);
-//     } catch (error) {
-//         console.error("Failed to process refund:", error.response?.data || error.message);
-//         res.status(500).send({
-//             message: "Failed to process refund",
-//             error: error.response?.data || error.message,
-//         });
-//     }
-// });
-
-// module.exports = router;
 const express = require("express");
 const crypto = require("crypto");
 const { randomUUID } = require('crypto');
@@ -946,17 +696,18 @@ const { StandardCheckoutClient, Env, StandardCheckoutPayRequest, RefundRequest }
 const Booking = require("../models/Booking");
 const router = express.Router();
 
-// --- PhonePe SDK Configuration ---
+// --- Configuration ---
+// It's crucial to store these credentials in environment variables for security.
 const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID;
 const CLIENT_SECRET = process.env.PHONEPE_SALT_KEY;
 const CLIENT_VERSION = 1;
-const ENV = Env.PRODUCTION; // Use Env.SANDBOX for testing
+const ENV = Env.PRODUCTION; // Change to Env.PRODUCTION for live environment
 
 const client = StandardCheckoutClient.getInstance(MERCHANT_ID, CLIENT_SECRET, CLIENT_VERSION, ENV);
 
 // Production URLs for callbacks and redirects.
-const REDIRECT_URL = "https://appointment-booking-server-o5c5.onrender.com/api/redirect-handler";
-const CALLBACK_URL = "https://appointment-booking-server-o5c5.onrender.com/api/bookings/phonepe-callback";
+const REDIRECT_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/redirect-handler";
+const CALLBACK_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/phonepe-callback";
 
 // --- Endpoint to initiate a payment ---
 router.post("/pay", async (req, res) => {
@@ -968,6 +719,7 @@ router.post("/pay", async (req, res) => {
             return res.status(400).json({ message: "Missing required booking information." });
         }
 
+        // 1. Check for existing booking (pending or paid) to prevent duplicate transactions
         const existingBooking = await Booking.findOne({
             date,
             timeSlot,
@@ -978,6 +730,7 @@ router.post("/pay", async (req, res) => {
             return res.status(409).json({ message: "This slot is already taken. Please choose another one." });
         }
 
+        // 2. Create a new booking with 'Pending' status.
         const newBooking = new Booking({
             date,
             timeSlot,
@@ -991,6 +744,7 @@ router.post("/pay", async (req, res) => {
 
         const merchantOrderId = newBooking._id.toString();
 
+        // 3. Initiate payment via PhonePe SDK
         const payRequest = StandardCheckoutPayRequest.builder()
             .merchantOrderId(merchantOrderId)
             .amount(amount * 100) // The amount is in paise
@@ -1025,119 +779,170 @@ router.post("/pay", async (req, res) => {
     }
 });
 
-// --- **FIXED** Endpoint to handle PhonePe's redirect after payment ---
-// This handler now relies on the Order Status API, not URL parameters.
+// --- Endpoint to handle PhonePe's redirect after payment ---
 router.get("/redirect-handler", async (req, res) => {
     try {
         console.log("PhonePe Redirect Query Params:", req.query);
-        const { code, transactionId } = req.query;
+        
+        // More robust transaction ID extraction
+        const merchantTransactionId = req.query.merchantTransactionId || 
+                                     req.query.transactionId || 
+                                     req.query.merchantOrderId;
 
-        // If the redirect URL doesn't contain a transactionId, the flow is broken.
-        // A more reliable way is to let the frontend poll for status.
-        if (!code || !transactionId) {
-            console.error("Redirect received without required query parameters. Redirecting to failure page.");
-            return res.redirect("https://manjunathrajpurohit.in/payment-failed?error=missing-parameters");
+        if (!merchantTransactionId) {
+            console.error("No transaction ID found in redirect");
+            return res.redirect("https://manjunathrajpurohit.in/payment-failure?error=no-transaction-id");
+        }
+        
+        // First check if we have a successful payment in our database
+        const booking = await Booking.findById(merchantTransactionId);
+        
+        if (booking && booking.status === "Paid") {
+            // If already marked as paid, redirect to success
+            return res.redirect(`https://manjunathrajpurohit.in/payment-result?status=success&transactionId=${merchantTransactionId}`);
         }
 
-        const booking = await Booking.findById(transactionId);
-
-        if (!booking) {
-            console.error("Booking not found for transactionId:", transactionId);
-            return res.redirect(`https://manjunathrajpurohit.in/payment-failed?error=booking-not-found&transactionId=${transactionId}`);
-        }
-
-        console.log(`Received redirect for transactionId: ${transactionId} with code: ${code}`);
-
-        // A robust approach is to directly check the status with PhonePe
-        const statusResponse = await client.checkStatus(transactionId);
-        console.log("Status Check API Response:", JSON.stringify(statusResponse, null, 2));
-
-        if (statusResponse && statusResponse.success && statusResponse.data) {
+        // If not paid yet, check status with PhonePe
+        console.log(`Checking payment status for: ${merchantTransactionId}`);
+        const statusResponse = await client.checkStatus(merchantTransactionId);
+        
+        if (statusResponse?.success && statusResponse.data) {
             const transactionState = statusResponse.data.state;
+            console.log("Payment state:", transactionState);
 
-            let finalStatus;
-            if (transactionState === "COMPLETED") {
-                booking.status = 'Paid';
-                finalStatus = "success";
-                // Optionally, here you can send a WhatsApp message or email
-            } else {
-                booking.status = 'Failed';
-                finalStatus = "failure";
+            // Update booking based on state
+            if (booking) {
+                if (transactionState === "COMPLETED") {
+                    booking.status = 'Paid';
+                    await booking.save();
+                    return res.redirect(`https://manjunathrajpurohit.in/payment-result?status=success&transactionId=${merchantTransactionId}`);
+                } else if (transactionState === "FAILED") {
+                    booking.status = 'Failed';
+                    await booking.save();
+                    return res.redirect(`https://manjunathrajpurohit.in/payment-result?status=failure&transactionId=${merchantTransactionId}`);
+                }
             }
-            await booking.save();
-            console.log(`Booking status updated to ${booking.status} based on redirect handler status check.`);
 
-            res.redirect(`https://manjunathrajpurohit.in/payment-result?status=${finalStatus}&transactionId=${transactionId}`);
-        } else {
-            console.error("Status check from PhonePe API failed, redirecting to failure page.");
-            res.redirect(`https://manjunathrajpurohit.in/payment-failed?error=status-check-failed&transactionId=${transactionId}`);
+            // If still pending, redirect with pending status
+            if (transactionState === "PENDING") {
+                return res.redirect(`https://manjunathrajpurohit.in/payment-pending?transactionId=${merchantTransactionId}`);
+            }
         }
 
+        // Fallback for any other case
+        console.error("Status check failed or inconclusive");
+        res.redirect(`https://manjunathrajpurohit.in/payment-pending?transactionId=${merchantTransactionId}`);
+        
     } catch (error) {
-        console.error("Error in redirect handler during status check:", error.response?.data || error.message);
-        res.redirect(`https://manjunathrajpurohit.in/payment-result?status=failure&error=redirect-handler-error`);
+        console.error("Redirect handler error:", error);
+        res.redirect(`https://manjunathrajpurohit.in/payment-result?status=failure&error=server-error`);
     }
 });
 
 // --- Webhook endpoint to receive payment status from PhonePe (POST request) ---
-router.post('/bookings/phonepe-callback', async (req, res) => {
+router.post('/phonepe-callback', async (req, res) => {
     try {
-        console.log("--- PHONEPE WEBHOOK RECEIVED ---");
-        console.log("Headers:", req.headers);
-        console.log("Raw Body:", JSON.stringify(req.body, null, 2));
+        const xVerifyHeader = req.headers['x-verify'];
+        const rawBody = JSON.stringify(req.body);
+        
+        console.log("Webhook received. X-Verify:", xVerifyHeader);
+        console.log("Webhook body:", rawBody);
 
-        const authorizationHeaderData = req.header('X-VERIFY');
-        const phonepeS2SCallbackResponseBodyString = JSON.stringify(req.body);
-
-        const usernameConfigured = process.env.PHONEPE_MERCHANT_USERNAME;
-        const passwordConfigured = process.env.PHONEPE_MERCHANT_PASSWORD;
-
-        const callbackResponse = client.validateCallback(
-            usernameConfigured,
-            passwordConfigured,
-            authorizationHeaderData,
-            phonepeS2SCallbackResponseBodyString
+        // Validate the callback
+        const validationResult = client.validateCallback(
+            process.env.PHONEPE_MERCHANT_USERNAME,
+            process.env.PHONEPE_MERCHANT_PASSWORD,
+            xVerifyHeader,
+            rawBody
         );
 
-        console.log("Webhook validation response:", JSON.stringify(callbackResponse, null, 2));
-
-        if (callbackResponse && callbackResponse.success) {
-            const state = callbackResponse.payload.state;
-            const merchantTransactionId = callbackResponse.payload.merchantTransactionId;
-
-            console.log(`Webhook validated. State: ${state}, Merchant Transaction ID: ${merchantTransactionId}`);
-
-            const booking = await Booking.findById(merchantTransactionId);
-
-            if (!booking) {
-                console.error('Booking not found for merchantTransactionId:', merchantTransactionId);
-                return res.status(404).send('Booking not found');
-            }
-
-            if (state === 'COMPLETED' && booking.status !== 'Paid') {
-                booking.status = 'Paid';
-                booking.paymentDetails = {
-                    ...booking.paymentDetails,
-                    phonepeTransactionId: callbackResponse.payload.transactionId,
-                };
-                await booking.save();
-                console.log(`Booking for ${booking.name} updated to Paid via webhook.`);
-            } else if (state === 'FAILED' && booking.status !== 'Failed') {
-                booking.status = 'Failed';
-                await booking.save();
-                console.log(`Booking for ${booking.name} failed via webhook. Status updated to Failed.`);
-            } else {
-                console.log(`Webhook received for state: ${state}. No status change necessary.`);
-            }
-
-            res.status(200).json({ success: true, message: "Webhook processed." });
-        } else {
-            console.error('Callback validation failed:', callbackResponse);
-            res.status(400).send('Invalid callback');
+        if (!validationResult?.success) {
+            console.error("Webhook validation failed:", validationResult);
+            return res.status(400).json({ error: "Invalid callback" });
         }
+
+        const payload = validationResult.payload;
+        const transactionId = payload.transactionId;
+        const merchantTransactionId = payload.merchantTransactionId;
+        const state = payload.state;
+
+        console.log(`Validated webhook. State: ${state}, Merchant TXN: ${merchantTransactionId}, PhonePe TXN: ${transactionId}`);
+
+        // Update booking status
+        const booking = await Booking.findById(merchantTransactionId);
+        if (!booking) {
+            console.error('Booking not found:', merchantTransactionId);
+            return res.status(404).json({ error: "Booking not found" });
+        }
+
+        // Only update if moving to a more definitive state
+        if (state === 'COMPLETED' && booking.status !== 'Paid') {
+            booking.status = 'Paid';
+            booking.paymentDetails = {
+                phonepeTransactionId: transactionId,
+                method: payload.paymentInstrument?.type || 'UNKNOWN',
+                completedAt: new Date()
+            };
+            await booking.save();
+            console.log(`Marked booking ${merchantTransactionId} as Paid`);
+        } else if (state === 'FAILED' && booking.status !== 'Failed') {
+            booking.status = 'Failed';
+            booking.paymentDetails = {
+                ...booking.paymentDetails,
+                failureReason: payload.code || 'Unknown reason'
+            };
+            await booking.save();
+            console.log(`Marked booking ${merchantTransactionId} as Failed`);
+        }
+
+        res.status(200).json({ success: true });
+
     } catch (error) {
-        console.error("Error handling PhonePe callback:", error);
-        res.status(500).send('Internal Server Error');
+        console.error("Webhook processing error:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
+// --- Endpoint to get payment status from PhonePe ---
+router.get("/status/:transactionId", async (req, res) => {
+    try {
+        const { transactionId } = req.params;
+        console.log("Checking status for transaction ID:", transactionId);
+
+        const response = await client.checkStatus(transactionId);
+        console.log("Order Status Response Data:", JSON.stringify(response, null, 2));
+        res.status(200).send(response);
+    } catch (error) {
+        console.error("Failed to get payment status:", error.response?.data || error.message);
+        res.status(500).send({
+            message: "Failed to get payment status",
+            error: error.response?.data || error.message,
+        });
+    }
+});
+
+// --- Endpoint for Refund API ---
+router.post("/refund", async (req, res) => {
+    try {
+        const { originalMerchantOrderId, amount } = req.body;
+        const merchantRefundId = randomUUID();
+        console.log("Starting refund for transaction:", originalMerchantOrderId);
+
+        const refundRequest = RefundRequest.builder()
+            .amount(amount * 100) // Amount in paise
+            .merchantRefundId(merchantRefundId)
+            .originalMerchantOrderId(originalMerchantOrderId)
+            .build();
+
+        const response = await client.refund(refundRequest);
+        console.log("Refund Response Data:", JSON.stringify(response, null, 2));
+        res.status(200).send(response);
+    } catch (error) {
+        console.error("Failed to process refund:", error.response?.data || error.message);
+        res.status(500).send({
+            message: "Failed to process refund",
+            error: error.response?.data || error.message,
+        });
     }
 });
 
