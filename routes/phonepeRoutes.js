@@ -955,7 +955,7 @@ const ENV = Env.PRODUCTION; // Use Env.SANDBOX for testing
 const client = StandardCheckoutClient.getInstance(MERCHANT_ID, CLIENT_SECRET, CLIENT_VERSION, ENV);
 
 // Production URLs for callbacks and redirects.
-const REDIRECT_URL = "https://appointment-booking-server-o5c5.onrender.com/api/bookings/redirect-handler";
+const REDIRECT_URL = "https://appointment-booking-server-o5c5.onrender.com/api/redirect-handler";
 const CALLBACK_URL = "https://appointment-booking-server-o5c5.onrender.com/api/bookings/phonepe-callback";
 
 // --- Endpoint to initiate a payment ---
