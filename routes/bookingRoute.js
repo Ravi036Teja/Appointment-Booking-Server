@@ -25,4 +25,6 @@ router.get("/booked/:date", bookingController.getBookedSlots);
 // The legacy '/book' endpoint has been removed.
 // All booking initiation now happens through the '/api/phonepe/pay' endpoint.
 
+router.get("/bookings/:id", bookingController.getBookingById);
+
 module.exports = router;
