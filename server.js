@@ -74,6 +74,7 @@ app.use("/api/admin", require("./routes/adminRoutes"));
 app.use("/api/blocked", require("./routes/blockedSlotRoute"));
 app.use('/api/gallery', require("./routes/ImageRoutes"));
 app.use('/api/phonepe', require("./routes/phonepeRoutes"));
+app.use("/api/feedback",  require("./routes/feedbackRoute"));
 
 // Root route
 app.get("/", (req, res) => {
