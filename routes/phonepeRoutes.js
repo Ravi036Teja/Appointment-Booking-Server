@@ -202,7 +202,6 @@
 
 // module.exports = router;
 
-
 const express = require("express");
 const { randomUUID } = require("crypto");
 const rawBody = require("raw-body");
@@ -240,27 +239,30 @@ const client = StandardCheckoutClient.getInstance(
  */
 router.post("/pay", async (req, res) => {
   try {
-    const { name, phone, date, timeSlot, amount } = req.body;
-    if (!name || !phone || !date || !timeSlot || !amount) {
+    const { name, phone, date, timeSlot } = req.body;
+    if (!name || !phone || !date || !timeSlot) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
     const merchantOrderId = randomUUID();
 
-    // Create booking in DB with Pending status
+    const fixedAmount = 100; // ₹100 fixed appointment fee
+    const amountInPaise = fixedAmount * 100; // 10000 paise
+
+    // Create booking in DB with fixed price
     const booking = await Booking.create({
       name,
       phone,
       date,
       timeSlot,
-      amount,
+      amount: fixedAmount, // store rupees in DB
       merchantOrderId,
       status: "Pending"
     });
 
     const payRequest = StandardCheckoutPayRequest.builder()
       .merchantOrderId(merchantOrderId)
-      .amount(Math.round(amount * 100)) // in paise
+      .amount(amountInPaise)
       .redirectUrl(`${REDIRECT_URL}?merchantOrderId=${merchantOrderId}`)
       .build();
 
@@ -312,6 +314,7 @@ router.get("/redirect-handler", async (req, res) => {
     else if (state === "EXPIRED") bookingStatus = "Expired";
 
     booking.status = bookingStatus;
+    booking.paymentDetails = booking.paymentDetails || {};
     booking.paymentDetails.phonepeTransactionId = txnId;
     await booking.save();
 
