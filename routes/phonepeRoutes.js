@@ -690,31 +690,31 @@
 // module.exports = router;
 import express from "express";
 import Booking from "../models/Booking.js";
-import crypto from "crypto";
-import bodyParser from "body-parser";
 import rawBody from "raw-body";
 import {
-    PhonePeClient,
+    StandardCheckoutClient,
     StandardCheckoutPayRequest,
     Env
-} from "phonepe-nodejs";
+} from "phonepe-pg-sdk-node";
 
 const router = express.Router();
 
-// Load from env
+// -------- Load from ENV --------
 const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID;
-const MERCHANT_KEY = process.env.PHONEPE_MERCHANT_KEY;
+const SALT_KEY = process.env.PHONEPE_MERCHANT_KEY;
+const SALT_INDEX = process.env.PHONEPE_SALT_INDEX || 1;
 const REDIRECT_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/redirect-handler";
 const CALLBACK_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/phonepe-callback";
 
-const client = new PhonePeClient({
-    env: Env.PROD, // change to Env.SANDBOX for testing
+// -------- Init PhonePe Client --------
+const client = new StandardCheckoutClient({
+    env: Env.PROD, // Change to Env.UAT for testing
     merchantId: MERCHANT_ID,
-    saltKey: MERCHANT_KEY,
-    saltIndex: 1
+    saltKey: SALT_KEY,
+    saltIndex: SALT_INDEX
 });
 
-// -------- Initiate Payment --------
+// -------- 1. Initiate Payment --------
 router.post("/pay", async (req, res) => {
     try {
         const { name, phone, date, timeSlot, amount } = req.body;
@@ -743,14 +743,14 @@ router.post("/pay", async (req, res) => {
 
         const merchantOrderId = newBooking._id.toString();
 
-        // Build request (no callbackUrl here)
+        // Build Pay Request
         const payRequest = StandardCheckoutPayRequest.builder()
             .merchantOrderId(merchantOrderId)
-            .amount(amount * 100) // paise
+            .amount(amount * 100) // in paise
             .redirectUrl(REDIRECT_URL)
             .build();
 
-        // Pass callbackUrl separately
+        // Pass callbackUrl as param
         const response = await client.pay(payRequest, { callbackUrl: CALLBACK_URL });
 
         if (response?.redirectUrl) {
@@ -765,7 +765,7 @@ router.post("/pay", async (req, res) => {
     }
 });
 
-// -------- Redirect Handler --------
+// -------- 2. Redirect Handler --------
 router.get("/redirect-handler", async (req, res) => {
     try {
         const { merchantOrderId } = req.query;
@@ -773,13 +773,14 @@ router.get("/redirect-handler", async (req, res) => {
             return res.redirect("https://manjunathrajpurohit.in/payment-result?status=failure&error=no-order-id");
         }
 
-        // Fetch payment status from PhonePe
         const statusResponse = await client.status(merchantOrderId);
         const paymentData = statusResponse?.data;
 
         if (paymentData?.state === "COMPLETED") {
+            await Booking.findByIdAndUpdate(merchantOrderId, { status: "Paid" });
             return res.redirect(`https://manjunathrajpurohit.in/payment-result?status=success&transactionId=${paymentData.transactionId}`);
         } else if (paymentData?.state === "FAILED") {
+            await Booking.findByIdAndUpdate(merchantOrderId, { status: "Failed" });
             return res.redirect(`https://manjunathrajpurohit.in/payment-result?status=failure&transactionId=${paymentData.transactionId || ""}`);
         } else {
             return res.redirect(`https://manjunathrajpurohit.in/payment-result?status=pending&transactionId=${paymentData?.transactionId || ""}`);
@@ -790,29 +791,20 @@ router.get("/redirect-handler", async (req, res) => {
     }
 });
 
-// -------- Raw body middleware for webhook --------
+// -------- 3. Webhook / Callback --------
 router.post("/phonepe-callback", async (req, res, next) => {
     try {
         const buf = await rawBody(req);
-        req.rawBody = buf.toString("utf8");
-        next();
-    } catch (err) {
-        console.error("Error reading raw body:", err);
-        res.status(500).send("Error reading raw body");
-    }
-}, bodyParser.json(), async (req, res) => {
-    try {
-        const receivedSignature = req.headers["x-verify"];
-        const computedSignature = crypto
-            .createHash("sha256")
-            .update(req.rawBody + MERCHANT_KEY)
-            .digest("hex");
+        const signature = req.headers["x-verify"];
 
-        if (receivedSignature !== computedSignature) {
+        // Verify with SDK
+        if (!client.verifyWebhookSignature(buf, signature)) {
             return res.status(400).json({ error: "Invalid signature" });
         }
 
-        const { merchantOrderId, state } = req.body;
+        const webhookData = JSON.parse(buf.toString());
+        const { merchantOrderId, state } = webhookData;
+
         if (!merchantOrderId) {
             return res.status(400).json({ error: "Missing order ID" });
         }
@@ -830,7 +822,7 @@ router.post("/phonepe-callback", async (req, res, next) => {
     }
 });
 
-// -------- Status API (for debugging) --------
+// -------- 4. Status API (debugging) --------
 router.get("/status/:orderId", async (req, res) => {
     try {
         const statusResponse = await client.status(req.params.orderId);
