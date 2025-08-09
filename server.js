@@ -56,6 +56,12 @@ require('./cron');
 
 const app = express();
 app.use(cors());
+
+
+// ✅ RAW body only for PhonePe webhook
+app.use('/api/phonepe/phonepe-callback', express.raw({ type: '*/*' }));
+
+// ✅ JSON parser for everything else
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 // Serve static files
