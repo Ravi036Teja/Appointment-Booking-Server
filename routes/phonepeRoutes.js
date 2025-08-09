@@ -688,14 +688,15 @@
 // });
 
 // module.exports = router;
-import express from "express";
-import Booking from "../models/Booking.js";
-import rawBody from "raw-body";
-import {
+// routes/phonepeRoutes.js
+const express = require("express");
+const Booking = require("../models/Booking");
+const rawBody = require("raw-body");
+const {
     StandardCheckoutClient,
     StandardCheckoutPayRequest,
     Env
-} from "pg-sdk-node";
+} = require("pg-sdk-node");
 
 const router = express.Router();
 
@@ -780,6 +781,7 @@ router.post("/pay", async (req, res) => {
 });
 
 // ===== 2. REDIRECT HANDLER =====
+// ===== 2. REDIRECT HANDLER =====
 router.get("/redirect-handler", async (req, res) => {
     try {
         console.log("[PhonePe] Redirect handler query:", req.query);
@@ -790,24 +792,39 @@ router.get("/redirect-handler", async (req, res) => {
         }
 
         const statusResponse = await client.status(merchantOrderId);
-        console.log("[PhonePe] Status API response:", statusResponse);
+        console.log("[PhonePe] Full Status API response:", JSON.stringify(statusResponse, null, 2));
 
-        const paymentData = statusResponse?.data;
+        // Extract payment state & transactionId from possible locations
+        const paymentState =
+            statusResponse?.data?.state ||
+            statusResponse?.data?.paymentDetails?.paymentState ||
+            statusResponse?.code; // fallback
 
-        if (paymentData?.state === "COMPLETED") {
+        const transactionId =
+            statusResponse?.data?.transactionId ||
+            statusResponse?.data?.paymentDetails?.transactionId ||
+            "";
+
+        console.log("[PhonePe] Extracted paymentState:", paymentState);
+        console.log("[PhonePe] Extracted transactionId:", transactionId);
+
+        if (paymentState?.toUpperCase() === "COMPLETED" || paymentState?.toUpperCase() === "SUCCESS") {
             await Booking.findByIdAndUpdate(merchantOrderId, { status: "Paid" });
-            return res.redirect(`https://manjunathrajpurohit.in/payment-result?status=success&transactionId=${paymentData.transactionId}`);
-        } else if (paymentData?.state === "FAILED") {
+            return res.redirect(`https://manjunathrajpurohit.in/payment-result?status=success&transactionId=${transactionId}`);
+        } 
+        else if (paymentState?.toUpperCase() === "FAILED") {
             await Booking.findByIdAndUpdate(merchantOrderId, { status: "Failed" });
-            return res.redirect(`https://manjunathrajpurohit.in/payment-result?status=failure&transactionId=${paymentData.transactionId || ""}`);
-        } else {
-            return res.redirect(`https://manjunathrajpurohit.in/payment-result?status=pending&transactionId=${paymentData?.transactionId || ""}`);
+            return res.redirect(`https://manjunathrajpurohit.in/payment-result?status=failure&transactionId=${transactionId}`);
+        } 
+        else {
+            return res.redirect(`https://manjunathrajpurohit.in/payment-result?status=pending&transactionId=${transactionId}`);
         }
     } catch (err) {
         console.error("[PhonePe] Redirect handler error:", err);
         res.redirect("https://manjunathrajpurohit.in/payment-result?status=failure&error=server-error");
     }
 });
+
 
 // ===== 3. CALLBACK / WEBHOOK =====
 router.post("/phonepe-callback", async (req, res) => {
@@ -859,4 +876,4 @@ router.get("/status/:orderId", async (req, res) => {
     }
 });
 
-export default router;
+module.exports = router;
