@@ -690,144 +690,108 @@
 // module.exports = router;
 // routes/phonepeRoutes.js
 const express = require("express");
+const { v4: uuidv4 } = require("uuid");
+const {
+  StandardCheckoutPayRequest,
+  PgCheckoutPaymentFlow,
+  MerchantUrls,
+  PhonePePaymentClient
+} = require("pg-sdk-node");
+require("dotenv").config();
+
 const router = express.Router();
-const mongoose = require("mongoose");
-const rawBody = require("raw-body");
-const { PhonePePaymentClient, Environment, StandardCheckoutPayRequest, PgCheckoutPaymentFlow, MerchantUrls } = require("phonepe-pg-sdk-node");
-const Booking = require("../models/Booking");
 
-// ✅ Initialize PhonePe client
-const client = new PhonePePaymentClient({
-    merchantId: process.env.PHONEPE_MERCHANT_ID,
-    saltKey: process.env.PHONEPE_SALT_KEY,
-    saltIndex: process.env.PHONEPE_SALT_INDEX,
-    env: process.env.PHONEPE_ENV === "PROD" ? Environment.PRODUCTION : Environment.UAT,
+const {
+  PHONEPE_MERCHANT_ID,
+  PHONEPE_SALT_KEY,
+  PHONEPE_SALT_KEY_INDEX,
+  PHONEPE_MERCHANT_USERNAME,
+  PHONEPE_MERCHANT_PASSWORD,
+  ENV,
+  VITE_API_URL,
+  FRONTEND_URL
+} = process.env;
+
+// PhonePe Client Init
+const phonePeClient = new PhonePePaymentClient({
+  merchantId: PHONEPE_MERCHANT_ID,
+  saltKey: PHONEPE_SALT_KEY,
+  saltKeyIndex: Number(PHONEPE_SALT_KEY_INDEX),
+  env: ENV, // 'PROD' or 'UAT'
+  username: PHONEPE_MERCHANT_USERNAME,
+  password: PHONEPE_MERCHANT_PASSWORD
 });
 
-// ===== 1. PAY ROUTE =====
+/**
+ * Initiate payment
+ */
 router.post("/pay", async (req, res) => {
-    try {
-        console.log("[PhonePe] /pay request body:", req.body);
+  try {
+    const { name, phone, date, timeSlot, amount } = req.body;
+    const orderId = uuidv4().replace(/-/g, "").slice(0, 24);
 
-        const { name, phone, date, timeSlot, amount } = req.body;
-        if (!name || !phone || !date || !timeSlot || !amount) {
-            return res.status(400).json({ error: "Missing required fields" });
-        }
+    const merchantUrls = new MerchantUrls({
+      redirectUrl: `${VITE_API_URL}/api/phonepe/redirect-handler`,
+      callbackUrl: `${VITE_API_URL}/api/phonepe/webhook`
+    });
 
-        // Create booking in DB
-        const booking = await Booking.create({
-            name,
-            phone,
-            date,
-            timeSlot,
-            amount,
-            status: "Pending",
-        });
+    const paymentFlow = new PgCheckoutPaymentFlow({
+      type: "PG_CHECKOUT",
+      merchantUrls
+    });
 
-        const orderId = booking._id.toString();
-        console.log("[PhonePe] Generated Order ID:", orderId);
+    const payRequest = new StandardCheckoutPayRequest({
+      merchantOrderId: orderId,
+      amount: amount * 100,
+      paymentFlow
+    });
 
-        // Create PhonePe pay request
-        const payRequest = new StandardCheckoutPayRequest({
-            merchantOrderId: orderId,
-            amount: Math.round(amount * 100), // Convert to paise
-            paymentFlow: new PgCheckoutPaymentFlow({
-                type: "PG_CHECKOUT",
-                merchantUrls: new MerchantUrls({
-                    redirectUrl: `${process.env.BASE_URL}/api/phonepe/redirect-handler`
-                })
-            })
-        });
+    const payResponse = await phonePeClient.pay(payRequest);
 
-        console.log("[PhonePe] Pay Request object:", payRequest);
-
-        const paymentResponse = await client.pay(payRequest);
-        console.log("[PhonePe] Payment API response:", paymentResponse);
-
-        if (!paymentResponse.success) {
-            return res.status(500).json({ error: "Failed to initiate payment" });
-        }
-
-        res.json({ redirectUrl: paymentResponse.data.instrumentResponse.redirectInfo.url });
-    } catch (err) {
-        console.error("[PhonePe] Payment initiation error:", err);
-        res.status(500).json({ error: err.message });
+    if (payResponse?.instrumentResponse?.redirectInfo?.url) {
+      return res.json({ redirectUrl: payResponse.instrumentResponse.redirectInfo.url });
+    } else {
+      return res.status(500).json({ error: "Payment initiation failed" });
     }
+  } catch (error) {
+    console.error("[PhonePe] Payment initiation error:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
-// ===== 2. REDIRECT HANDLER =====
-router.post("/redirect-handler", async (req, res) => {
-    try {
-        console.log("[PhonePe] Redirect payload:", req.body);
+/**
+ * Redirect handler (Frontend redirect after payment)
+ */
+router.get("/redirect-handler", async (req, res) => {
+  try {
+    const { code, merchantOrderId, transactionId } = req.query;
 
-        const { merchantOrderId } = req.body;
-        if (!merchantOrderId) {
-            return res.status(400).send("Missing transaction ID");
-        }
-
-        const statusResponse = await client.status(merchantOrderId);
-        console.log("[PhonePe] Status response:", statusResponse);
-
-        if (statusResponse.success && statusResponse.data.state === "COMPLETED") {
-            await Booking.findByIdAndUpdate(merchantOrderId, { status: "Paid" });
-            return res.send("Payment successful! Booking confirmed.");
-        } else {
-            await Booking.findByIdAndUpdate(merchantOrderId, { status: "Failed" });
-            return res.send("Payment failed or pending.");
-        }
-    } catch (error) {
-        console.error("[PhonePe] Redirect handler error:", error);
-        res.status(500).send("Error processing redirect");
+    if (code === "PAYMENT_SUCCESS") {
+      return res.redirect(`${FRONTEND_URL}/payment-result?status=Paid&transactionId=${transactionId}`);
+    } else {
+      return res.redirect(`${FRONTEND_URL}/payment-result?status=Failed`);
     }
+  } catch (error) {
+    console.error("[PhonePe] Redirect handler error:", error);
+    res.redirect(`${FRONTEND_URL}/payment-result?status=Failed`);
+  }
 });
 
-// ===== 3. CALLBACK / WEBHOOK =====
-router.post("/phonepe-callback", async (req, res) => {
-    try {
-        const buf = await rawBody(req);
-        const signature = req.headers["x-verify"];
+/**
+ * Webhook (Server-to-server verification)
+ */
+router.post("/webhook", async (req, res) => {
+  try {
+    console.log("[PhonePe] Webhook received:", req.body);
 
-        console.log("[PhonePe] Received Webhook Signature:", signature);
+    // Here you would verify hash signature from headers (security)
+    // and then update your database booking/payment status
 
-        const isValid = client.verifyWebhookSignature(buf, signature);
-        console.log("[PhonePe] Webhook signature valid:", isValid);
-
-        if (!isValid) {
-            return res.status(400).json({ error: "Invalid signature" });
-        }
-
-        const webhookData = JSON.parse(buf.toString());
-        console.log("[PhonePe] Webhook data parsed:", webhookData);
-
-        const { merchantOrderId, state } = webhookData;
-        if (!merchantOrderId) {
-            return res.status(400).json({ error: "Missing order ID" });
-        }
-
-        if (state === "COMPLETED") {
-            await Booking.findByIdAndUpdate(merchantOrderId, { status: "Paid" });
-        } else if (state === "FAILED") {
-            await Booking.findByIdAndUpdate(merchantOrderId, { status: "Failed" });
-        }
-
-        res.json({ success: true });
-    } catch (err) {
-        console.error("[PhonePe] Webhook error:", err);
-        res.status(500).json({ error: "Server error" });
-    }
-});
-
-// ===== 4. STATUS API =====
-router.get("/status/:orderId", async (req, res) => {
-    try {
-        console.log("[PhonePe] Checking status for order:", req.params.orderId);
-        const statusResponse = await client.status(req.params.orderId);
-        console.log("[PhonePe] Status API raw response:", statusResponse);
-        res.json(statusResponse);
-    } catch (err) {
-        console.error("[PhonePe] Status check error:", err);
-        res.status(500).json({ error: err.message });
-    }
+    res.status(200).send("OK");
+  } catch (error) {
+    console.error("[PhonePe] Webhook error:", error);
+    res.status(500).send("ERROR");
+  }
 });
 
 module.exports = router;
