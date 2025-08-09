@@ -699,38 +699,48 @@ import {
 
 const router = express.Router();
 
-// -------- Load from ENV --------
+// ===== ENV CONFIG =====
 const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID;
 const SALT_KEY = process.env.PHONEPE_MERCHANT_KEY;
-const SALT_INDEX = process.env.PHONEPE_SALT_INDEX || 1;
+const SALT_INDEX = parseInt(process.env.PHONEPE_SALT_INDEX || "1");
 const REDIRECT_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/redirect-handler";
 const CALLBACK_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/phonepe-callback";
 
-// -------- Init PhonePe Client --------
+// ===== CLIENT INIT =====
+console.log("[PhonePe] Initializing StandardCheckoutClient with ENV:", {
+    env: Env.PROD,
+    merchantId: MERCHANT_ID,
+    saltIndex: SALT_INDEX
+});
 const client = new StandardCheckoutClient({
-    env: Env.PROD, // Change to Env.UAT for testing
+    env: Env.PROD, // Change to Env.UAT for sandbox
     merchantId: MERCHANT_ID,
     saltKey: SALT_KEY,
     saltIndex: SALT_INDEX
 });
 
-// -------- 1. Initiate Payment --------
+// ===== 1. INITIATE PAYMENT =====
 router.post("/pay", async (req, res) => {
     try {
+        console.log("[PhonePe] /pay request body:", req.body);
+
         const { name, phone, date, timeSlot, amount } = req.body;
         if (!name || !phone || !date || !timeSlot || !amount) {
             return res.status(400).json({ message: "Missing required booking info" });
         }
 
+        // Check slot availability
         const existingBooking = await Booking.findOne({
             date,
             timeSlot,
             status: { $in: ["Paid", "Pending"] }
         });
         if (existingBooking) {
+            console.log("[PhonePe] Slot already taken:", existingBooking);
             return res.status(409).json({ message: "This slot is already taken" });
         }
 
+        // Save booking with Pending
         const newBooking = new Booking({
             date,
             timeSlot,
@@ -742,16 +752,20 @@ router.post("/pay", async (req, res) => {
         await newBooking.save();
 
         const merchantOrderId = newBooking._id.toString();
+        console.log("[PhonePe] Generated Order ID:", merchantOrderId);
 
-        // Build Pay Request
+        // Build pay request
         const payRequest = StandardCheckoutPayRequest.builder()
             .merchantOrderId(merchantOrderId)
-            .amount(amount * 100) // in paise
+            .amount(amount * 100) // convert to paise
             .redirectUrl(REDIRECT_URL)
             .build();
 
-        // Pass callbackUrl as param
+        console.log("[PhonePe] Pay Request object:", payRequest);
+
+        // Execute payment request
         const response = await client.pay(payRequest, { callbackUrl: CALLBACK_URL });
+        console.log("[PhonePe] Pay API response:", response);
 
         if (response?.redirectUrl) {
             return res.status(200).json({ success: true, redirectUrl: response.redirectUrl });
@@ -760,20 +774,24 @@ router.post("/pay", async (req, res) => {
             return res.status(500).json({ message: "Payment initiation failed" });
         }
     } catch (err) {
-        console.error("Payment initiation error:", err);
+        console.error("[PhonePe] Payment initiation error:", err);
         res.status(500).json({ message: "Server error", error: err.message });
     }
 });
 
-// -------- 2. Redirect Handler --------
+// ===== 2. REDIRECT HANDLER =====
 router.get("/redirect-handler", async (req, res) => {
     try {
+        console.log("[PhonePe] Redirect handler query:", req.query);
+
         const { merchantOrderId } = req.query;
         if (!merchantOrderId) {
             return res.redirect("https://manjunathrajpurohit.in/payment-result?status=failure&error=no-order-id");
         }
 
         const statusResponse = await client.status(merchantOrderId);
+        console.log("[PhonePe] Status API response:", statusResponse);
+
         const paymentData = statusResponse?.data;
 
         if (paymentData?.state === "COMPLETED") {
@@ -786,25 +804,31 @@ router.get("/redirect-handler", async (req, res) => {
             return res.redirect(`https://manjunathrajpurohit.in/payment-result?status=pending&transactionId=${paymentData?.transactionId || ""}`);
         }
     } catch (err) {
-        console.error("Redirect handler error:", err);
+        console.error("[PhonePe] Redirect handler error:", err);
         res.redirect("https://manjunathrajpurohit.in/payment-result?status=failure&error=server-error");
     }
 });
 
-// -------- 3. Webhook / Callback --------
-router.post("/phonepe-callback", async (req, res, next) => {
+// ===== 3. CALLBACK / WEBHOOK =====
+router.post("/phonepe-callback", async (req, res) => {
     try {
         const buf = await rawBody(req);
         const signature = req.headers["x-verify"];
 
-        // Verify with SDK
-        if (!client.verifyWebhookSignature(buf, signature)) {
+        console.log("[PhonePe] Received Webhook Signature:", signature);
+
+        // Verify webhook signature
+        const isValid = client.verifyWebhookSignature(buf, signature);
+        console.log("[PhonePe] Webhook signature valid:", isValid);
+
+        if (!isValid) {
             return res.status(400).json({ error: "Invalid signature" });
         }
 
         const webhookData = JSON.parse(buf.toString());
-        const { merchantOrderId, state } = webhookData;
+        console.log("[PhonePe] Webhook data parsed:", webhookData);
 
+        const { merchantOrderId, state } = webhookData;
         if (!merchantOrderId) {
             return res.status(400).json({ error: "Missing order ID" });
         }
@@ -817,18 +841,20 @@ router.post("/phonepe-callback", async (req, res, next) => {
 
         res.json({ success: true });
     } catch (err) {
-        console.error("Webhook error:", err);
+        console.error("[PhonePe] Webhook error:", err);
         res.status(500).json({ error: "Server error" });
     }
 });
 
-// -------- 4. Status API (debugging) --------
+// ===== 4. STATUS API (Debugging) =====
 router.get("/status/:orderId", async (req, res) => {
     try {
+        console.log("[PhonePe] Checking status for order:", req.params.orderId);
         const statusResponse = await client.status(req.params.orderId);
+        console.log("[PhonePe] Status API raw response:", statusResponse);
         res.json(statusResponse);
     } catch (err) {
-        console.error("Status check error:", err);
+        console.error("[PhonePe] Status check error:", err);
         res.status(500).json({ error: err.message });
     }
 });
