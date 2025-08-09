@@ -771,42 +771,79 @@ router.post("/pay", async (req, res) => {
 /**
  * 2️⃣ Redirect Handler (user lands here after payment)
  */
+// router.get("/redirect-handler", async (req, res) => {
+//   try {
+//     const { merchantOrderId } = req.query;
+//     if (!merchantOrderId) {
+//       return res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
+//     }
+
+//     const statusResp = await client.getOrderStatus(merchantOrderId);
+//     const state = statusResp?.state?.toUpperCase();
+
+//     let bookingStatus = "Pending";
+//     if (state === "COMPLETED") bookingStatus = "Paid";
+//     else if (state === "FAILED") bookingStatus = "Failed";
+//     else if (state === "EXPIRED") bookingStatus = "Expired";
+
+//     await Booking.findOneAndUpdate(
+//       { merchantOrderId },
+//       {
+//         status: bookingStatus,
+//         "paymentDetails.phonepeTransactionId":
+//           statusResp?.transactionId || null
+//       }
+//     );
+
+//     if (bookingStatus === "Paid") {
+//       return res.redirect(`${FRONTEND_URL}/payment-result?status=success`);
+//     } else if (bookingStatus === "Failed") {
+//       return res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
+//     }
+
+//     res.redirect(`${FRONTEND_URL}/payment-result?status=${bookingStatus.toLowerCase()}`);
+//   } catch (err) {
+//     console.error("[REDIRECT] Error:", err);
+//     res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
+//   }
+// });
+
+// --- Redirect Handler ---
 router.get("/redirect-handler", async (req, res) => {
   try {
     const { merchantOrderId } = req.query;
+    console.log("[REDIRECT] Query:", req.query);
+
     if (!merchantOrderId) {
       return res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
     }
 
     const statusResp = await client.getOrderStatus(merchantOrderId);
+    console.log("[REDIRECT] Status Response:", statusResp);
+
     const state = statusResp?.state?.toUpperCase();
+    const txnId = statusResp?.transactionId || statusResp?.data?.transactionId || "NA";
+    const amount = statusResp?.amount ? statusResp.amount / 100 : null;
 
-    let bookingStatus = "Pending";
-    if (state === "COMPLETED") bookingStatus = "Paid";
-    else if (state === "FAILED") bookingStatus = "Failed";
-    else if (state === "EXPIRED") bookingStatus = "Expired";
-
-    await Booking.findOneAndUpdate(
-      { merchantOrderId },
-      {
-        status: bookingStatus,
-        "paymentDetails.phonepeTransactionId":
-          statusResp?.transactionId || null
-      }
-    );
-
-    if (bookingStatus === "Paid") {
-      return res.redirect(`${FRONTEND_URL}/payment-result?status=success`);
-    } else if (bookingStatus === "Failed") {
-      return res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
+    if (state === "COMPLETED") {
+      return res.redirect(
+        `${FRONTEND_URL}/payment-result?status=success&txnId=${txnId}&orderId=${merchantOrderId}&amount=${amount}`
+      );
+    } else if (state === "FAILED") {
+      return res.redirect(
+        `${FRONTEND_URL}/payment-result?status=failure&txnId=${txnId}&orderId=${merchantOrderId}`
+      );
     }
 
-    res.redirect(`${FRONTEND_URL}/payment-result?status=${bookingStatus.toLowerCase()}`);
+    res.redirect(
+      `${FRONTEND_URL}/payment-result?status=pending&txnId=${txnId}&orderId=${merchantOrderId}`
+    );
   } catch (err) {
     console.error("[REDIRECT] Error:", err);
     res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
   }
 });
+
 
 /**
  * 3️⃣ Webhook (server-to-server confirmation)
