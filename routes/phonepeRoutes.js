@@ -695,7 +695,7 @@ import {
     StandardCheckoutClient,
     StandardCheckoutPayRequest,
     Env
-} from "phonepe-pg-sdk-node";
+} from "pg-sdk-node";
 
 const router = express.Router();
 
