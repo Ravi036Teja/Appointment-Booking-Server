@@ -706,6 +706,7 @@ const REDIRECT_URL = "https://appointment-booking-server-o5c5.onrender.com/api/p
 const CALLBACK_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/phonepe-callback";
 
 // --- Initiate Payment ---
+// --- Initiate Payment ---
 router.post("/pay", async (req, res) => {
     try {
         const { name, phone, date, timeSlot, amount } = req.body;
@@ -713,27 +714,25 @@ router.post("/pay", async (req, res) => {
             return res.status(400).json({ message: "Missing required booking info" });
         }
 
-        // Prevent duplicate bookings
         const existingBooking = await Booking.findOne({ date, timeSlot, status: { $in: ["Paid", "Pending"] } });
         if (existingBooking) {
             return res.status(409).json({ message: "This slot is already taken" });
         }
 
-        // Create booking with Pending status
         const newBooking = new Booking({ date, timeSlot, name, phone, amount, status: "Pending" });
         await newBooking.save();
 
         const merchantOrderId = newBooking._id.toString();
 
-        // Build payment request
+        // FIX: no callbackUrl here
         const payRequest = StandardCheckoutPayRequest.builder()
             .merchantOrderId(merchantOrderId)
-            .amount(amount * 100) // amount in paise
+            .amount(amount * 100)
             .redirectUrl(REDIRECT_URL)
-            .callbackUrl(CALLBACK_URL) // webhook callback
             .build();
 
-        const response = await client.pay(payRequest);
+        // Pass callbackUrl separately
+        const response = await client.pay(payRequest, { callbackUrl: CALLBACK_URL });
 
         if (response?.redirectUrl) {
             return res.status(200).json({ success: true, redirectUrl: response.redirectUrl });
@@ -746,6 +745,7 @@ router.post("/pay", async (req, res) => {
         res.status(500).json({ message: "Server error", error: err.message });
     }
 });
+
 
 // --- Redirect Handler ---
 router.get("/redirect-handler", async (req, res) => {
