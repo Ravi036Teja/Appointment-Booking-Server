@@ -688,109 +688,165 @@
 // });
 
 // module.exports = router;
+
 // routes/phonepeRoutes.js
 const express = require("express");
-const { v4: uuidv4 } = require("uuid");
-const {
-  StandardCheckoutPayRequest,
-  PgCheckoutPaymentFlow,
-  MerchantUrls,
-  PhonePePaymentClient
-} = require("pg-sdk-node");
+const { randomUUID } = require("crypto");
+const rawBody = require("raw-body");
 require("dotenv").config();
+
+const {
+  StandardCheckoutClient,
+  StandardCheckoutPayRequest,
+  Env
+} = require("pg-sdk-node");
+
+const Booking = require("../models/Booking");
 
 const router = express.Router();
 
 const {
-  PHONEPE_MERCHANT_ID,
-  PHONEPE_SALT_KEY,
-  PHONEPE_SALT_KEY_INDEX,
-  PHONEPE_MERCHANT_USERNAME,
-  PHONEPE_MERCHANT_PASSWORD,
+  PHONEPE_CLIENT_ID,
+  PHONEPE_CLIENT_SECRET,
+  PHONEPE_CLIENT_VERSION,
   ENV,
-  VITE_API_URL,
+  REDIRECT_URL,
   FRONTEND_URL
 } = process.env;
 
-// PhonePe Client Init
-const phonePeClient = new PhonePePaymentClient({
-  merchantId: PHONEPE_MERCHANT_ID,
-  saltKey: PHONEPE_SALT_KEY,
-  saltKeyIndex: Number(PHONEPE_SALT_KEY_INDEX),
-  env: ENV, // 'PROD' or 'UAT'
-  username: PHONEPE_MERCHANT_USERNAME,
-  password: PHONEPE_MERCHANT_PASSWORD
-});
+// Initialize PhonePe client
+const client = StandardCheckoutClient.getInstance(
+  PHONEPE_CLIENT_ID,
+  PHONEPE_CLIENT_SECRET,
+  parseInt(PHONEPE_CLIENT_VERSION),
+  ENV === "PROD" ? Env.PRODUCTION : Env.SANDBOX
+);
 
 /**
- * Initiate payment
+ * 1️⃣ Create booking & initiate payment
  */
 router.post("/pay", async (req, res) => {
   try {
     const { name, phone, date, timeSlot, amount } = req.body;
-    const orderId = uuidv4().replace(/-/g, "").slice(0, 24);
-
-    const merchantUrls = new MerchantUrls({
-      redirectUrl: `${VITE_API_URL}/api/phonepe/redirect-handler`,
-      callbackUrl: `${VITE_API_URL}/api/phonepe/webhook`
-    });
-
-    const paymentFlow = new PgCheckoutPaymentFlow({
-      type: "PG_CHECKOUT",
-      merchantUrls
-    });
-
-    const payRequest = new StandardCheckoutPayRequest({
-      merchantOrderId: orderId,
-      amount: amount * 100,
-      paymentFlow
-    });
-
-    const payResponse = await phonePeClient.pay(payRequest);
-
-    if (payResponse?.instrumentResponse?.redirectInfo?.url) {
-      return res.json({ redirectUrl: payResponse.instrumentResponse.redirectInfo.url });
-    } else {
-      return res.status(500).json({ error: "Payment initiation failed" });
+    if (!name || !phone || !date || !timeSlot || !amount) {
+      return res.status(400).json({ error: "Missing required fields" });
     }
-  } catch (error) {
-    console.error("[PhonePe] Payment initiation error:", error);
-    res.status(500).json({ error: error.message });
+
+    const merchantOrderId = randomUUID();
+
+    // Create booking in DB with Pending status
+    const booking = await Booking.create({
+      name,
+      phone,
+      date,
+      timeSlot,
+      amount,
+      merchantOrderId,
+      status: "Pending"
+    });
+
+    const payRequest = StandardCheckoutPayRequest.builder()
+      .merchantOrderId(merchantOrderId)
+      .amount(Math.round(amount * 100)) // in paise
+      .redirectUrl(REDIRECT_URL + `?merchantOrderId=${merchantOrderId}`)
+      .build();
+
+    const response = await client.pay(payRequest);
+
+    if (response?.redirectUrl) {
+      res.json({
+        redirectUrl: response.redirectUrl,
+        merchantOrderId,
+        bookingId: booking._id
+      });
+    } else {
+      res.status(500).json({ error: "No redirect URL", response });
+    }
+  } catch (err) {
+    console.error("[PAY] Error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
 /**
- * Redirect handler (Frontend redirect after payment)
+ * 2️⃣ Redirect Handler (user lands here after payment)
  */
 router.get("/redirect-handler", async (req, res) => {
   try {
-    const { code, merchantOrderId, transactionId } = req.query;
-
-    if (code === "PAYMENT_SUCCESS") {
-      return res.redirect(`${FRONTEND_URL}/payment-result?status=Paid&transactionId=${transactionId}`);
-    } else {
-      return res.redirect(`${FRONTEND_URL}/payment-result?status=Failed`);
+    const { merchantOrderId } = req.query;
+    if (!merchantOrderId) {
+      return res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
     }
-  } catch (error) {
-    console.error("[PhonePe] Redirect handler error:", error);
-    res.redirect(`${FRONTEND_URL}/payment-result?status=Failed`);
+
+    const statusResp = await client.getOrderStatus(merchantOrderId);
+    const state = statusResp?.state?.toUpperCase();
+
+    let bookingStatus = "Pending";
+    if (state === "COMPLETED") bookingStatus = "Paid";
+    else if (state === "FAILED") bookingStatus = "Failed";
+    else if (state === "EXPIRED") bookingStatus = "Expired";
+
+    await Booking.findOneAndUpdate(
+      { merchantOrderId },
+      {
+        status: bookingStatus,
+        "paymentDetails.phonepeTransactionId":
+          statusResp?.transactionId || null
+      }
+    );
+
+    if (bookingStatus === "Paid") {
+      return res.redirect(`${FRONTEND_URL}/payment-result?status=success`);
+    } else if (bookingStatus === "Failed") {
+      return res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
+    }
+
+    res.redirect(`${FRONTEND_URL}/payment-result?status=${bookingStatus.toLowerCase()}`);
+  } catch (err) {
+    console.error("[REDIRECT] Error:", err);
+    res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
   }
 });
 
 /**
- * Webhook (Server-to-server verification)
+ * 3️⃣ Webhook (server-to-server confirmation)
  */
-router.post("/webhook", async (req, res) => {
+router.post("/phonepe-callback", async (req, res) => {
   try {
-    console.log("[PhonePe] Webhook received:", req.body);
+    const buf = await rawBody(req);
+    const signature = req.headers["authorization"];
 
-    // Here you would verify hash signature from headers (security)
-    // and then update your database booking/payment status
+    const callbackResp = client.validateCallback(
+      PHONEPE_CLIENT_ID,
+      PHONEPE_CLIENT_SECRET,
+      signature,
+      buf.toString()
+    );
 
-    res.status(200).send("OK");
-  } catch (error) {
-    console.error("[PhonePe] Webhook error:", error);
-    res.status(500).send("ERROR");
+    const { payload } = callbackResp;
+    const { merchantOrderId, state, transactionId } = payload;
+
+    let bookingStatus = "Pending";
+    if (state?.toUpperCase() === "COMPLETED") bookingStatus = "Paid";
+    else if (state?.toUpperCase() === "FAILED") bookingStatus = "Failed";
+    else if (state?.toUpperCase() === "EXPIRED") bookingStatus = "Expired";
+
+    await Booking.findOneAndUpdate(
+      { merchantOrderId },
+      {
+        status: bookingStatus,
+        paymentDetails: {
+          phonepeTransactionId: transactionId,
+          rawCallback: payload
+        }
+      }
+    );
+
+    console.log(`[WEBHOOK] Booking ${merchantOrderId} updated to ${bookingStatus}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("[WEBHOOK] Error:", err);
+    res.status(400).json({ error: "Invalid webhook" });
   }
 });
 
