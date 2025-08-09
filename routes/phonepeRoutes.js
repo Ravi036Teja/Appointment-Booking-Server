@@ -688,25 +688,33 @@
 // });
 
 // module.exports = router;
-const express = require("express");
-const { randomUUID } = require("crypto");
-const { StandardCheckoutClient, Env, StandardCheckoutPayRequest, RefundRequest } = require("pg-sdk-node");
-const Booking = require("../models/Booking");
+import express from "express";
+import Booking from "../models/Booking.js";
+import crypto from "crypto";
+import bodyParser from "body-parser";
+import rawBody from "raw-body";
+import {
+    PhonePeClient,
+    StandardCheckoutPayRequest,
+    Env
+} from "phonepe-nodejs";
+
 const router = express.Router();
 
-// --- Config ---
+// Load from env
 const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID;
-const CLIENT_SECRET = process.env.PHONEPE_SALT_KEY;
-const CLIENT_VERSION = 1;
-const ENV = Env.PRODUCTION; // Change to Env.SANDBOX for testing
-
-const client = StandardCheckoutClient.getInstance(MERCHANT_ID, CLIENT_SECRET, CLIENT_VERSION, ENV);
-
+const MERCHANT_KEY = process.env.PHONEPE_MERCHANT_KEY;
 const REDIRECT_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/redirect-handler";
 const CALLBACK_URL = "https://appointment-booking-server-o5c5.onrender.com/api/phonepe/phonepe-callback";
 
-// --- Initiate Payment ---
-// --- Initiate Payment ---
+const client = new PhonePeClient({
+    env: Env.PROD, // change to Env.SANDBOX for testing
+    merchantId: MERCHANT_ID,
+    saltKey: MERCHANT_KEY,
+    saltIndex: 1
+});
+
+// -------- Initiate Payment --------
 router.post("/pay", async (req, res) => {
     try {
         const { name, phone, date, timeSlot, amount } = req.body;
@@ -714,20 +722,31 @@ router.post("/pay", async (req, res) => {
             return res.status(400).json({ message: "Missing required booking info" });
         }
 
-        const existingBooking = await Booking.findOne({ date, timeSlot, status: { $in: ["Paid", "Pending"] } });
+        const existingBooking = await Booking.findOne({
+            date,
+            timeSlot,
+            status: { $in: ["Paid", "Pending"] }
+        });
         if (existingBooking) {
             return res.status(409).json({ message: "This slot is already taken" });
         }
 
-        const newBooking = new Booking({ date, timeSlot, name, phone, amount, status: "Pending" });
+        const newBooking = new Booking({
+            date,
+            timeSlot,
+            name,
+            phone,
+            amount,
+            status: "Pending"
+        });
         await newBooking.save();
 
         const merchantOrderId = newBooking._id.toString();
 
-        // FIX: no callbackUrl here
+        // Build request (no callbackUrl here)
         const payRequest = StandardCheckoutPayRequest.builder()
             .merchantOrderId(merchantOrderId)
-            .amount(amount * 100)
+            .amount(amount * 100) // paise
             .redirectUrl(REDIRECT_URL)
             .build();
 
@@ -746,112 +765,80 @@ router.post("/pay", async (req, res) => {
     }
 });
 
-
-// --- Redirect Handler ---
+// -------- Redirect Handler --------
 router.get("/redirect-handler", async (req, res) => {
     try {
-        const merchantTransactionId = req.query.merchantOrderId || req.query.merchantTransactionId;
-        if (!merchantTransactionId) {
-            return res.redirect("https://manjunathrajpurohit.in/payment-result?status=failure&error=no-transaction-id");
+        const { merchantOrderId } = req.query;
+        if (!merchantOrderId) {
+            return res.redirect("https://manjunathrajpurohit.in/payment-result?status=failure&error=no-order-id");
         }
 
-        const booking = await Booking.findById(merchantTransactionId);
+        // Fetch payment status from PhonePe
+        const statusResponse = await client.status(merchantOrderId);
+        const paymentData = statusResponse?.data;
 
-        // Check payment status from PhonePe
-        const statusResponse = await client.checkStatus(merchantTransactionId);
-        const transactionState = statusResponse?.data?.state;
-
-        if (transactionState === "COMPLETED") {
-            if (booking && booking.status !== "Paid") {
-                booking.status = "Paid";
-                await booking.save();
-            }
-            return res.redirect(`https://manjunathrajpurohit.in/payment-result?status=success&transactionId=${merchantTransactionId}`);
-        } else if (transactionState === "FAILED") {
-            if (booking && booking.status !== "Failed") {
-                booking.status = "Failed";
-                await booking.save();
-            }
-            return res.redirect(`https://manjunathrajpurohit.in/payment-result?status=failure&transactionId=${merchantTransactionId}`);
+        if (paymentData?.state === "COMPLETED") {
+            return res.redirect(`https://manjunathrajpurohit.in/payment-result?status=success&transactionId=${paymentData.transactionId}`);
+        } else if (paymentData?.state === "FAILED") {
+            return res.redirect(`https://manjunathrajpurohit.in/payment-result?status=failure&transactionId=${paymentData.transactionId || ""}`);
         } else {
-            return res.redirect(`https://manjunathrajpurohit.in/payment-pending?transactionId=${merchantTransactionId}`);
+            return res.redirect(`https://manjunathrajpurohit.in/payment-result?status=pending&transactionId=${paymentData?.transactionId || ""}`);
         }
     } catch (err) {
-        console.error("Redirect error:", err);
-        res.redirect(`https://manjunathrajpurohit.in/payment-result?status=failure&error=server-error`);
+        console.error("Redirect handler error:", err);
+        res.redirect("https://manjunathrajpurohit.in/payment-result?status=failure&error=server-error");
     }
 });
 
-// --- Webhook Handler (RAW body) ---
-router.post("/phonepe-callback", async (req, res) => {
+// -------- Raw body middleware for webhook --------
+router.post("/phonepe-callback", async (req, res, next) => {
     try {
-        const xVerifyHeader = req.headers["x-verify"];
-        const rawBody = req.body.toString("utf8"); // raw from express.raw()
+        const buf = await rawBody(req);
+        req.rawBody = buf.toString("utf8");
+        next();
+    } catch (err) {
+        console.error("Error reading raw body:", err);
+        res.status(500).send("Error reading raw body");
+    }
+}, bodyParser.json(), async (req, res) => {
+    try {
+        const receivedSignature = req.headers["x-verify"];
+        const computedSignature = crypto
+            .createHash("sha256")
+            .update(req.rawBody + MERCHANT_KEY)
+            .digest("hex");
 
-        console.log("Webhook Received:", rawBody);
-
-        // Validate webhook signature
-        const isValid = client.validateCallback(xVerifyHeader, rawBody);
-        if (!isValid) {
-            console.error("Invalid webhook signature");
+        if (receivedSignature !== computedSignature) {
             return res.status(400).json({ error: "Invalid signature" });
         }
 
-        const payload = JSON.parse(rawBody);
-        const { merchantOrderId, state, transactionId } = payload;
-
-        const booking = await Booking.findById(merchantOrderId);
-        if (!booking) {
-            return res.status(404).json({ error: "Booking not found" });
+        const { merchantOrderId, state } = req.body;
+        if (!merchantOrderId) {
+            return res.status(400).json({ error: "Missing order ID" });
         }
 
         if (state === "COMPLETED") {
-            booking.status = "Paid";
-            booking.paymentDetails = { phonepeTransactionId: transactionId, completedAt: new Date() };
+            await Booking.findByIdAndUpdate(merchantOrderId, { status: "Paid" });
         } else if (state === "FAILED") {
-            booking.status = "Failed";
-            booking.paymentDetails = { ...booking.paymentDetails, failureReason: payload.code || "Unknown" };
+            await Booking.findByIdAndUpdate(merchantOrderId, { status: "Failed" });
         }
-        await booking.save();
 
-        console.log(`Booking ${merchantOrderId} updated via webhook`);
-        res.status(200).json({ success: true });
+        res.json({ success: true });
     } catch (err) {
         console.error("Webhook error:", err);
-        res.status(500).json({ error: "Internal server error" });
+        res.status(500).json({ error: "Server error" });
     }
 });
 
-// --- Payment Status API ---
-router.get("/status/:transactionId", async (req, res) => {
+// -------- Status API (for debugging) --------
+router.get("/status/:orderId", async (req, res) => {
     try {
-        const { transactionId } = req.params;
-        const response = await client.checkStatus(transactionId);
-        res.status(200).send(response);
-    } catch (error) {
-        console.error("Failed to get payment status:", error);
-        res.status(500).send({ message: "Failed to get payment status" });
+        const statusResponse = await client.status(req.params.orderId);
+        res.json(statusResponse);
+    } catch (err) {
+        console.error("Status check error:", err);
+        res.status(500).json({ error: err.message });
     }
 });
 
-// --- Refund API ---
-router.post("/refund", async (req, res) => {
-    try {
-        const { originalMerchantOrderId, amount } = req.body;
-        const merchantRefundId = randomUUID();
-
-        const refundRequest = RefundRequest.builder()
-            .amount(amount * 100) // paise
-            .merchantRefundId(merchantRefundId)
-            .originalMerchantOrderId(originalMerchantOrderId)
-            .build();
-
-        const response = await client.refund(refundRequest);
-        res.status(200).send(response);
-    } catch (error) {
-        console.error("Failed to process refund:", error);
-        res.status(500).send({ message: "Failed to process refund" });
-    }
-});
-
-module.exports = router;
+export default router;
