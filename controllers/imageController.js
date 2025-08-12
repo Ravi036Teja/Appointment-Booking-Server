@@ -1,35 +1,41 @@
 const Image = require('../models/ImageModel');
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const cloudinary = require('cloudinary').v2;
 
-// Configure Multer for image storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    // Ensure the 'uploads' directory exists
-    const dir = 'uploads/';
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir);
-    }
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname));
+// Cloudinary Configuration
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// Cloudinary Storage Engine for Multer
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'mern-gallery', // Optional folder in Cloudinary
+    format: async (req, file) => 'jpg', // supports promises as well
+    public_id: (req, file) => Date.now() + '-' + file.originalname,
   },
 });
 
 const upload = multer({ storage: storage });
 
-// Controller for uploading a new image
+// Controller for uploading a new image to Cloudinary
 const uploadImage = async (req, res) => {
   try {
+     console.log('Received upload request');
     if (!req.file) {
+        console.error('No file received from frontend');
       return res.status(400).json({ message: 'No file uploaded' });
     }
+    console.log('File received:', req.file);
 
     const newImage = new Image({
       filename: req.file.filename,
-      path: req.file.path,
+      path: req.file.path, // This path will now be the Cloudinary URL
+      public_id: req.file.filename, // Store Cloudinary's public ID to allow for deletion
     });
 
     await newImage.save();
@@ -39,7 +45,7 @@ const uploadImage = async (req, res) => {
   }
 };
 
-// Controller for fetching all images for the gallery
+// Controller for fetching all images from the database
 const getGalleryImages = async (req, res) => {
   try {
     const images = await Image.find().sort({ createdAt: -1 });
@@ -49,7 +55,7 @@ const getGalleryImages = async (req, res) => {
   }
 };
 
-// Controller for deleting an image
+// Controller for deleting an image from the database and Cloudinary
 const deleteImage = async (req, res) => {
   try {
     const { id } = req.params;
@@ -59,12 +65,8 @@ const deleteImage = async (req, res) => {
       return res.status(404).json({ message: 'Image not found' });
     }
 
-    // Delete the physical file from the uploads directory
-    fs.unlink(image.path, (err) => {
-      if (err) {
-        console.error('Failed to delete image file:', err);
-      }
-    });
+    // Delete the image from Cloudinary using its public_id
+    await cloudinary.uploader.destroy(image.public_id);
 
     res.status(200).json({ message: 'Image deleted successfully' });
   } catch (error) {

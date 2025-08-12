@@ -6,7 +6,11 @@ const imageSchema = new mongoose.Schema({
     required: true,
   },
   path: {
-    type: String,
+    type: String, // This will store the Cloudinary URL
+    required: true,
+  },
+  public_id: {
+    type: String, // Cloudinary's public_id for file deletion
     required: true,
   },
   createdAt: {
