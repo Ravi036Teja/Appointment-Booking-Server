@@ -1,5 +1,3 @@
-
-
 // const express = require("express");
 // const router = express.Router();
 // const bookingController = require("../controllers/bookingController");
@@ -7,21 +5,24 @@
 // // Get all bookings
 // router.get("/", bookingController.getAllBookings);
 
-// // Get booked slots for a specific date (only paid bookings)
+// // Get booked slots for a specific date (only Paid/Pending bookings)
 // router.get("/booked/:date", bookingController.getBookedSlots);
 
-// // The legacy '/book' endpoint has been removed.
-// // All booking initiation now happens through the '/api/phonepe/pay' endpoint.
-
-// router.get("/bookings/:id", bookingController.getBookingById);
+// // Get a single booking by ID
+// router.get("/:id", bookingController.getBookingById);
 
 // module.exports = router;
+
 
 const express = require("express");
 const router = express.Router();
 const bookingController = require("../controllers/bookingController");
+const { protect } = require("../middleware/authMiddleware"); // Assuming you have this middleware
 
-// Get all bookings
+// **NEW:** Create a new booking (requires authentication)
+router.post("/create", protect, bookingController.createBooking);
+
+// Get all bookings (admin-only, but without an admin check for now)
 router.get("/", bookingController.getAllBookings);
 
 // Get booked slots for a specific date (only Paid/Pending bookings)

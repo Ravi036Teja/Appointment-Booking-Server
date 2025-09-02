@@ -3,11 +3,11 @@ const mongoose = require("mongoose");
 const bookingSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: true,
+    
   },
   phone: {
     type: String,
-    required: true,
+
   },
   date: {
     type: String, // 'YYYY-MM-DD'
@@ -38,6 +38,12 @@ const bookingSchema = new mongoose.Schema({
     rawCallback: {
       type: Object, // full webhook payload from PhonePe
     },
+  },
+  // Add a user reference
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true, // A booking must belong to a user
   },
   createdAt: {
     type: Date,

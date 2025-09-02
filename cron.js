@@ -70,11 +70,11 @@ cron.schedule('*/5 * * * *', async () => {
 // - */3: every 3rd day of the month
 // - *: any month
 // - *: any day of the week
-cron.schedule('0 0 */3 * *', async () => {
+cron.schedule('*/5 * * * *', async () => {
     console.log('Running scheduled cleanup job for deleting expired bookings...');
     // Define a threshold for how old 'Expired' bookings should be before deletion.
     // E.g., delete bookings that have been expired for at least 24 hours.
-    const deletionThreshold = dayjs().subtract(1, 'day');
+    const deletionThreshold = dayjs().subtract(15, 'minutes');
 
     try {
         // Find all 'Expired' bookings that were created more than a day ago.
