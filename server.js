@@ -31,7 +31,7 @@ app.use("/api/blocked", require("./routes/blockedSlotRoute"));
 app.use('/api/gallery', require("./routes/ImageRoutes"));
 app.use('/api/phonepe', require("./routes/phonepeRoutes"));
 app.use("/api/feedback",  require("./routes/feedbackRoute"));
-app.use("/api/users", require("./routes/userRoutes"));
+// app.use("/api/users", require("./routes/userRoutes"));
 // Root route
 app.get("/", (req, res) => {
   res.send("Backend API is running...");
