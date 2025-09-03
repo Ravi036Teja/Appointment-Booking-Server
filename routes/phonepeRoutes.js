@@ -43,7 +43,7 @@ router.post("/pay", async (req, res) => {
 
     const merchantOrderId = randomUUID();
 
-    const fixedAmount = 100; // ₹100 fixed appointment fee
+    const fixedAmount = 1; // ₹100 fixed appointment fee
     const amountInPaise = fixedAmount * 100; // 10000 paise
 
     // Create booking in DB with fixed price
