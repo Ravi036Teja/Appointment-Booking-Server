@@ -178,138 +178,287 @@
 
 
 // whatasapp api
+
+// const express = require("express");
+// const { randomUUID } = require("crypto");
+// require("dotenv").config();
+// const { StandardCheckoutClient, StandardCheckoutPayRequest, Env } = require("pg-sdk-node");
+// const Booking = require("../models/Booking");
+// const { sendWhatsAppConfirmation } = require("../services/msg91Services");
+
+// const router = express.Router();
+
+// const {
+//   PHONEPE_CLIENT_ID,
+//   PHONEPE_CLIENT_SECRET,
+//   PHONEPE_CLIENT_VERSION,
+//   ENV,
+//   REDIRECT_URL,
+//   FRONTEND_URL,
+// } = process.env;
+
+// const client = StandardCheckoutClient.getInstance(
+//   PHONEPE_CLIENT_ID,
+//   PHONEPE_CLIENT_SECRET,
+//   parseInt(PHONEPE_CLIENT_VERSION),
+//   ENV === "PROD" ? Env.PRODUCTION : Env.SANDBOX
+// );
+
+// /**
+//  * 1️⃣ Create booking & initiate payment
+//  */
+// router.post("/pay", async (req, res) => {
+//   try {
+//     const { name, phone, date, timeSlot, userLanguage } = req.body;
+//     if (!name || !phone || !date || !timeSlot) {
+//       return res.status(400).json({ error: "Missing required fields" });
+//     }
+
+//     const merchantOrderId = randomUUID();
+//     const fixedAmount = 100;
+//     const amountInPaise = fixedAmount * 100;
+
+//     const booking = await Booking.create({
+//       name,
+//       phone,
+//       date,
+//       timeSlot,
+//       userLanguage, // Save language preference
+//       amount: fixedAmount,
+//       merchantOrderId,
+//       status: "Pending",
+//     });
+
+//     const payRequest = StandardCheckoutPayRequest.builder()
+//       .merchantOrderId(merchantOrderId)
+//       .amount(amountInPaise)
+//       .redirectUrl(`${REDIRECT_URL}?merchantOrderId=${merchantOrderId}`)
+//       .build();
+
+//     const response = await client.pay(payRequest);
+
+//     if (response?.redirectUrl) {
+//       res.json({
+//         redirectUrl: response.redirectUrl,
+//         merchantOrderId,
+//         bookingId: booking._id,
+//       });
+//     } else {
+//       res.status(500).json({ error: "No redirect URL", response });
+//     }
+//   } catch (err) {
+//     console.error("[PAY] Error:", err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+// /**
+//  * 2️⃣ Redirect Handler (user lands here after payment)
+//  * This is where we will check status and send the message.
+//  */
+// router.get("/redirect-handler", async (req, res) => {
+//   try {
+//     const { merchantOrderId } = req.query;
+//     console.log("[REDIRECT] Query:", req.query);
+
+//     if (!merchantOrderId) {
+//       return res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
+//     }
+
+//     const statusResp = await client.getOrderStatus(merchantOrderId);
+//     console.log("[REDIRECT] Status Response:", statusResp);
+
+//     const state = statusResp?.state?.toUpperCase();
+//     const txnId = statusResp?.transactionId || "NA";
+
+//     const booking = await Booking.findOne({ merchantOrderId });
+//     if (!booking) {
+//       return res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
+//     }
+
+//     let bookingStatus = "Pending";
+//     if (state === "COMPLETED") bookingStatus = "Paid";
+//     else if (state === "FAILED") bookingStatus = "Failed";
+//     else if (state === "EXPIRED") bookingStatus = "Expired";
+
+//     // Update booking with transaction ID & status
+//     booking.status = bookingStatus;
+//     booking.paymentDetails = booking.paymentDetails || {};
+//     booking.paymentDetails.phonepeTransactionId = txnId;
+//     await booking.save();
+
+//     if (bookingStatus === "Paid") {
+//       // ✅ This is where you now send the WhatsApp message
+//       console.log("[REDIRECT] Payment confirmed. Attempting to send WhatsApp message.");
+//       await sendWhatsAppConfirmation(
+//         booking.name,
+//         booking.phone,
+//         booking.date,
+//         booking.timeSlot,
+//         booking.userLanguage // Pass the stored language
+//       );
+      
+//       return res.redirect(
+//         `${FRONTEND_URL}/payment-result?status=success&txnId=${txnId}&orderId=${merchantOrderId}&amount=${booking.amount}&name=${encodeURIComponent(booking.name)}&phone=${booking.phone}&date=${encodeURIComponent(booking.date)}&time=${encodeURIComponent(booking.timeSlot)}`
+//       );
+//     } else {
+//       console.log(`[REDIRECT] Payment state is not 'COMPLETED'. Not sending WhatsApp message. State: ${bookingStatus}`);
+//       return res.redirect(
+//         `${FRONTEND_URL}/payment-result?status=${bookingStatus.toLowerCase()}&orderId=${merchantOrderId}`
+//       );
+//     }
+//   } catch (err) {
+//     console.error("[REDIRECT] Error:", err);
+//     res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
+//   }
+// });
+
+// module.exports = router;
+
+// 2nd working code above code without admin notification
+
 const express = require("express");
 const { randomUUID } = require("crypto");
 require("dotenv").config();
 const { StandardCheckoutClient, StandardCheckoutPayRequest, Env } = require("pg-sdk-node");
 const Booking = require("../models/Booking");
-const { sendWhatsAppConfirmation } = require("../services/msg91Services");
+const { sendWhatsAppConfirmation, sendAdminNotification } = require("../services/msg91Services");
 
 const router = express.Router();
 
 const {
-  PHONEPE_CLIENT_ID,
-  PHONEPE_CLIENT_SECRET,
-  PHONEPE_CLIENT_VERSION,
-  ENV,
-  REDIRECT_URL,
-  FRONTEND_URL,
+  PHONEPE_CLIENT_ID,
+  PHONEPE_CLIENT_SECRET,
+  PHONEPE_CLIENT_VERSION,
+  ENV,
+  REDIRECT_URL,
+  FRONTEND_URL,
 } = process.env;
 
 const client = StandardCheckoutClient.getInstance(
-  PHONEPE_CLIENT_ID,
-  PHONEPE_CLIENT_SECRET,
-  parseInt(PHONEPE_CLIENT_VERSION),
-  ENV === "PROD" ? Env.PRODUCTION : Env.SANDBOX
+  PHONEPE_CLIENT_ID,
+  PHONEPE_CLIENT_SECRET,
+  parseInt(PHONEPE_CLIENT_VERSION),
+  ENV === "PROD" ? Env.PRODUCTION : Env.SANDBOX
 );
 
 /**
- * 1️⃣ Create booking & initiate payment
- */
+ * 1️⃣ Create booking & initiate payment
+ */
 router.post("/pay", async (req, res) => {
-  try {
-    const { name, phone, date, timeSlot, userLanguage } = req.body;
-    if (!name || !phone || !date || !timeSlot) {
-      return res.status(400).json({ error: "Missing required fields" });
-    }
+  try {
+    const { name, phone, date, timeSlot, userLanguage } = req.body;
+    if (!name || !phone || !date || !timeSlot) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
 
-    const merchantOrderId = randomUUID();
-    const fixedAmount = 100;
-    const amountInPaise = fixedAmount * 100;
+    const merchantOrderId = randomUUID();
+    const fixedAmount = 100;
+    const amountInPaise = fixedAmount * 100;
 
-    const booking = await Booking.create({
-      name,
-      phone,
-      date,
-      timeSlot,
-      userLanguage, // Save language preference
-      amount: fixedAmount,
-      merchantOrderId,
-      status: "Pending",
-    });
+    const booking = await Booking.create({
+      name,
+      phone,
+      date,
+      timeSlot,
+      userLanguage, // Save language preference
+      amount: fixedAmount,
+      merchantOrderId,
+      status: "Pending",
+    });
 
-    const payRequest = StandardCheckoutPayRequest.builder()
-      .merchantOrderId(merchantOrderId)
-      .amount(amountInPaise)
-      .redirectUrl(`${REDIRECT_URL}?merchantOrderId=${merchantOrderId}`)
-      .build();
+    const payRequest = StandardCheckoutPayRequest.builder()
+      .merchantOrderId(merchantOrderId)
+      .amount(amountInPaise)
+      .redirectUrl(`${REDIRECT_URL}?merchantOrderId=${merchantOrderId}`)
+      .build();
 
-    const response = await client.pay(payRequest);
+    const response = await client.pay(payRequest);
 
-    if (response?.redirectUrl) {
-      res.json({
-        redirectUrl: response.redirectUrl,
-        merchantOrderId,
-        bookingId: booking._id,
-      });
-    } else {
-      res.status(500).json({ error: "No redirect URL", response });
-    }
-  } catch (err) {
-    console.error("[PAY] Error:", err);
-    res.status(500).json({ error: err.message });
-  }
+    if (response?.redirectUrl) {
+      res.json({
+        redirectUrl: response.redirectUrl,
+        merchantOrderId,
+        bookingId: booking._id,
+      });
+    } else {
+      res.status(500).json({ error: "No redirect URL", response });
+    }
+  } catch (err) {
+    console.error("[PAY] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /**
- * 2️⃣ Redirect Handler (user lands here after payment)
- * This is where we will check status and send the message.
- */
+ * 2️⃣ Redirect Handler (user lands here after payment)
+ * This is where we will check status and send the message.
+ */
 router.get("/redirect-handler", async (req, res) => {
-  try {
-    const { merchantOrderId } = req.query;
-    console.log("[REDIRECT] Query:", req.query);
+  try {
+    const { merchantOrderId } = req.query;
+    console.log("[REDIRECT] Query:", req.query);
 
-    if (!merchantOrderId) {
-      return res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
-    }
+    if (!merchantOrderId) {
+      return res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
+    }
 
-    const statusResp = await client.getOrderStatus(merchantOrderId);
-    console.log("[REDIRECT] Status Response:", statusResp);
+    const statusResp = await client.getOrderStatus(merchantOrderId);
+    console.log("[REDIRECT] Status Response:", statusResp);
 
-    const state = statusResp?.state?.toUpperCase();
-    const txnId = statusResp?.transactionId || "NA";
+    const state = statusResp?.state?.toUpperCase();
+    const txnId = statusResp?.transactionId || "NA";
 
-    const booking = await Booking.findOne({ merchantOrderId });
-    if (!booking) {
-      return res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
-    }
+    const booking = await Booking.findOne({ merchantOrderId });
+    if (!booking) {
+      return res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
+    }
 
-    let bookingStatus = "Pending";
-    if (state === "COMPLETED") bookingStatus = "Paid";
-    else if (state === "FAILED") bookingStatus = "Failed";
-    else if (state === "EXPIRED") bookingStatus = "Expired";
+    let bookingStatus = "Pending";
+    if (state === "COMPLETED") bookingStatus = "Paid";
+    else if (state === "FAILED") bookingStatus = "Failed";
+    else if (state === "EXPIRED") bookingStatus = "Expired";
 
-    // Update booking with transaction ID & status
-    booking.status = bookingStatus;
-    booking.paymentDetails = booking.paymentDetails || {};
-    booking.paymentDetails.phonepeTransactionId = txnId;
-    await booking.save();
+    // Update booking with transaction ID & status
+    booking.status = bookingStatus;
+    booking.paymentDetails = booking.paymentDetails || {};
+    booking.paymentDetails.phonepeTransactionId = txnId;
+    await booking.save();
 
-    if (bookingStatus === "Paid") {
-      // ✅ This is where you now send the WhatsApp message
-      console.log("[REDIRECT] Payment confirmed. Attempting to send WhatsApp message.");
-      await sendWhatsAppConfirmation(
-        booking.name,
-        booking.phone,
-        booking.date,
-        booking.timeSlot,
-        booking.userLanguage // Pass the stored language
-      );
-      
-      return res.redirect(
-        `${FRONTEND_URL}/payment-result?status=success&txnId=${txnId}&orderId=${merchantOrderId}&amount=${booking.amount}&name=${encodeURIComponent(booking.name)}&phone=${booking.phone}&date=${encodeURIComponent(booking.date)}&time=${encodeURIComponent(booking.timeSlot)}`
-      );
-    } else {
-      console.log(`[REDIRECT] Payment state is not 'COMPLETED'. Not sending WhatsApp message. State: ${bookingStatus}`);
-      return res.redirect(
-        `${FRONTEND_URL}/payment-result?status=${bookingStatus.toLowerCase()}&orderId=${merchantOrderId}`
-      );
-    }
-  } catch (err) {
-    console.error("[REDIRECT] Error:", err);
-    res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
-  }
+    if (bookingStatus === "Paid") {
+      console.log("[REDIRECT] Payment confirmed. Attempting to send WhatsApp message.");
+
+      // Send confirmation to the customer
+      await sendWhatsAppConfirmation(
+        booking.name,
+        booking.phone,
+        booking.date,
+        booking.timeSlot,
+        booking.userLanguage
+      );
+
+      // Send notification to the admin
+      await sendAdminNotification(
+        booking.name,
+        booking.phone,
+        booking.date,
+        booking.timeSlot,
+        booking.amount
+      );
+      
+      return res.redirect(
+        `${FRONTEND_URL}/payment-result?status=success&txnId=${txnId}&orderId=${merchantOrderId}&amount=${booking.amount}&name=${encodeURIComponent(booking.name)}&phone=${booking.phone}&date=${encodeURIComponent(booking.date)}&time=${encodeURIComponent(booking.timeSlot)}`
+      );
+    } else {
+      console.log(`[REDIRECT] Payment state is not 'COMPLETED'. Not sending WhatsApp message. State: ${bookingStatus}`);
+      return res.redirect(
+        `${FRONTEND_URL}/payment-result?status=${bookingStatus.toLowerCase()}&orderId=${merchantOrderId}`
+      );
+    }
+  } catch (err) {
+    console.error("[REDIRECT] Error:", err);
+    res.redirect(`${FRONTEND_URL}/payment-result?status=failure`);
+  }
 });
 
 module.exports = router;
