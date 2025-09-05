@@ -214,7 +214,7 @@ router.post("/pay", async (req, res) => {
     }
 
     const merchantOrderId = randomUUID();
-    const fixedAmount = 100;
+    const fixedAmount = 1;
     const amountInPaise = fixedAmount * 100;
 
     const booking = await Booking.create({
