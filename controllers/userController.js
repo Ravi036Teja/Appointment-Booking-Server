@@ -68,4 +68,36 @@ const loginUser = async (req, res) => {
   }
 };
 
-module.exports = { registerUser, loginUser };
+
+
+
+// @desc    Get user profile
+// @route   GET /api/users/profile
+const getProfile = async (req, res) => {
+  if (req.user) {
+    try {
+      // ✅ Populate the 'bookings' field with actual booking documents
+      const user = await User.findById(req.user._id).populate('bookings');
+
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Now `user.bookings` contains the full booking objects
+      res.json({
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        bookings: user.bookings, // ✅ This will now include all user bookings
+      });
+    } catch (error) {
+      console.error("Error fetching user profile with bookings:", error);
+      res.status(500).json({ message: "Server error" });
+    }
+  } else {
+    res.status(401).json({ message: 'Not authorized, user not found' });
+  }
+};
+
+module.exports = { registerUser, loginUser , getProfile};

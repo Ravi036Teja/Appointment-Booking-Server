@@ -17,14 +17,19 @@ const router = express.Router();
 const bookingController = require("../controllers/bookingController");
 const { protect } = require('../middleware/authMiddleware');
 
-// Get all bookings with optional filters (e.g., today)
-// This route is now protected to be accessible only by an authenticated admin
+// Get all bookings (protected)
 router.get("/", protect, bookingController.getAllBookings);
 
-// Get booked slots for a specific date (only Paid/Pending bookings)
+// Get booked slots for a specific date
 router.get("/booked/:date", bookingController.getBookedSlots);
 
-// Get a single booking by ID
+// ✅ Move this route ABOVE the `/:id` route to avoid conflict
+router.get("/merchant/:merchantOrderId", bookingController.getBookingByMerchantOrderId);
+
+// Get a single booking by ID (protected)
 router.get("/:id", protect, bookingController.getBookingById);
+
+// Refund route (protected)
+router.patch("/:bookingId/refund", protect, bookingController.updateRefundStatus);
 
 module.exports = router;
