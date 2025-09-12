@@ -1564,7 +1564,7 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const pgSdk = require("pg-sdk-node"); // ✅ This is the correct way to import the module
-// const { randomUUID } = require("crypto");
+const { randomUUID } = require("crypto");
 const crypto = require("crypto");
 require("dotenv").config();
 const Booking = require("../models/Booking");
