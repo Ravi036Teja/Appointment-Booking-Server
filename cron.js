@@ -171,17 +171,111 @@ const dayjs = require('dayjs');
 const Booking = require('./models/Booking'); // Adjust the path as necessary
 const { initiateRefund } = require("./services/refundService"); // Make sure this path is correct
 
-const setupAllCronJobs = () => {
+// const setupAllCronJobs = () => {
 
-    // 1. Cron job to update pending bookings to expired (runs every 5 minutes)
+//     // 1. Cron job to update pending bookings to expired (runs every 5 minutes)
+//     cron.schedule('*/5 * * * *', async () => {
+//         console.log('Running scheduled status update job for pending bookings...');
+//         const timeoutThreshold = dayjs().subtract(15, 'minutes');
+//         try {
+//             const result = await Booking.updateMany(
+//                 {
+//                     status: 'Pending',
+//                     createdAt: { $lt: timeoutThreshold.toDate() }
+//                 },
+//                 {
+//                     status: 'Expired'
+//                 }
+//             );
+//             console.log(`Status update job finished. ${result.modifiedCount} bookings marked as Expired.`);
+//         } catch (error) {
+//             console.error("Error running status update job:", error);
+//         }
+//     });
+
+//     // 2. Cron job to clean up expired bookings (runs every 5 minutes)
+//     cron.schedule('*/5 * * * *', async () => {
+//         console.log('Running scheduled cleanup job for deleting expired bookings...');
+//         const deletionThreshold = dayjs().subtract(15, 'minutes');
+//         try {
+//             const result = await Booking.deleteMany({
+//                 status: 'Expired',
+//                 createdAt: { $lt: deletionThreshold.toDate() }
+//             });
+//             if (result.deletedCount > 0) {
+//                 console.log(`Cleanup job finished. ${result.deletedCount} expired bookings have been deleted from the database.`);
+//             } else {
+//                 console.log('Cleanup job finished. No expired bookings found for deletion.');
+//             }
+//         } catch (error) {
+//             console.error("Error running deletion cleanup job:", error);
+//         }
+//     });
+
+//     // 3. NEW Cron job for automatic refunds (runs every hour)
+    // cron.schedule("0 * * * *", async () => {
+    //     console.log("Running scheduled job to check for duplicate paid bookings...");
+
+    //     try {
+    //         const duplicateSlots = await Booking.aggregate([
+    //             {
+    //                 $match: {
+    //                     status: "Paid",
+    //                     createdAt: { $gt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) } // Check bookings from the last 48 hours
+    //                 }
+    //             },
+    //             {
+    //                 $group: {
+    //                     _id: { date: "$date", timeSlot: "$timeSlot" },
+    //                     count: { $sum: 1 },
+    //                     bookings: { $push: "$$ROOT" }
+    //                 }
+    //             },
+    //             {
+    //                 $match: {
+    //                     count: { $gt: 1 } // Only groups with more than one booking
+    //                 }
+    //             }
+    //         ]);
+
+    //         if (duplicateSlots.length > 0) {
+    //             console.log(`Found ${duplicateSlots.length} duplicate slot(s). Processing refunds...`);
+    //             for (const slot of duplicateSlots) {
+    //                 // Sort bookings by creation time to find the latest one (the duplicate)
+    //                 const sortedBookings = slot.bookings.sort((a, b) => b.createdAt - a.createdAt);
+    //                 const duplicateBooking = sortedBookings[0];
+
+    //                 console.log(`Processing refund for duplicate booking ID: ${duplicateBooking._id} (merchantOrderId: ${duplicateBooking.merchantOrderId})`);
+                    
+    //                 // Use the refund service to initiate the refund
+    //                 await initiateRefund(duplicateBooking.merchantOrderId);
+    //             }
+    //         } else {
+    //             console.log("No duplicate paid bookings found.");
+    //         }
+    //     } catch (error) {
+    //         console.error("Error in scheduled refund job:", error);
+    //     }
+    // });
+
+//     console.log("All cron jobs for booking management have been started.");
+// };
+
+// module.exports = {
+//     setupAllCronJobs,
+// };
+
+const setupAllCronJobs = () => {
+    // 1. Corrected cron job to update pending bookings to expired (runs every 5 minutes)
     cron.schedule('*/5 * * * *', async () => {
         console.log('Running scheduled status update job for pending bookings...');
-        const timeoutThreshold = dayjs().subtract(15, 'minutes');
         try {
+            // Find pending bookings where createdAt is more than 10 minutes ago
+            // Using a more robust time check to avoid off-by-one errors
             const result = await Booking.updateMany(
                 {
                     status: 'Pending',
-                    createdAt: { $lt: timeoutThreshold.toDate() }
+                    createdAt: { $lt: dayjs().subtract(10, 'minutes').toDate() }
                 },
                 {
                     status: 'Expired'
@@ -193,27 +287,29 @@ const setupAllCronJobs = () => {
         }
     });
 
-    // 2. Cron job to clean up expired bookings (runs every 5 minutes)
+    // 2. Cron job to clean up expired and failed bookings (runs every 5 minutes)
     cron.schedule('*/5 * * * *', async () => {
-        console.log('Running scheduled cleanup job for deleting expired bookings...');
-        const deletionThreshold = dayjs().subtract(15, 'minutes');
+        console.log('Running scheduled cleanup job for deleting expired and failed bookings...');
         try {
+            // Find bookings that are 'Expired' or 'Failed' and are older than 10 minutes
             const result = await Booking.deleteMany({
-                status: 'Expired',
-                createdAt: { $lt: deletionThreshold.toDate() }
+                status: { $in: ['Expired', 'Failed'] },
+                createdAt: { $lt: dayjs().subtract(10, 'minutes').toDate() }
             });
+
             if (result.deletedCount > 0) {
-                console.log(`Cleanup job finished. ${result.deletedCount} expired bookings have been deleted from the database.`);
+                console.log(`Cleanup job finished. ${result.deletedCount} expired/failed bookings have been deleted from the database.`);
             } else {
-                console.log('Cleanup job finished. No expired bookings found for deletion.');
+                console.log('Cleanup job finished. No expired or failed bookings found for deletion.');
             }
         } catch (error) {
             console.error("Error running deletion cleanup job:", error);
         }
     });
 
+
     // 3. NEW Cron job for automatic refunds (runs every hour)
-    cron.schedule("0 * * * *", async () => {
+     cron.schedule("0 * * * *", async () => {
         console.log("Running scheduled job to check for duplicate paid bookings...");
 
         try {
