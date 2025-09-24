@@ -331,7 +331,7 @@ require("dotenv").config();
 const Booking = require("../models/Booking");
 const axios = require("axios");
 const { sendWhatsAppConfirmation, sendAdminNotification } = require("../services/msg91Services");
-
+const BlockedSlot = require("../models/BlockedSlot");
 const router = express.Router();
 
 const {
@@ -405,8 +405,27 @@ router.post("/pay", async (req, res) => {
             return res.status(409).json({ error: "This slot is already booked or is being processed." });
         }
 
+        // --- 🚨 NEW: CHECK FOR BLOCKED DATES 🚨 ---
+    const blockedDate = await BlockedSlot.findOne({ date }).session(session);
+    if (blockedDate) {
+        // Check if the entire day is blocked (timeSlots is an empty array)
+        if (blockedDate.timeSlots.length === 0) {
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(409).json({ error: blockedDate.message || "This date has been blocked by the admin." });
+        }
+        // Check if a specific time slot is blocked
+        if (blockedDate.timeSlots.includes(timeSlot)) {
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(409).json({ error: blockedDate.message || "This time slot has been blocked by the admin." });
+        }
+    }
+    // --- 🚨 END OF NEW CHECK 🚨 ---
+
         const merchantOrderId = randomUUID();
         const amountInPaise = 100 * 100;
+        
 
         const booking = await Booking.create([{
             name,
