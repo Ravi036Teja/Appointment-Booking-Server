@@ -29,6 +29,15 @@ app.set('io', io);
 
 app.use(cors());
 
+// Wake-up route for Render (public, no auth needed)
+app.get('/wake', (req, res) => {
+  res.status(200).json({ 
+    status: 'ok', 
+    message: 'JAPL Backend is awake and running!',
+    timestamp: new Date().toISOString()
+  });
+});
+
 
 //  RAW body only for PhonePe webhook
 app.use('/api/phonepe/phonepe-callback', express.raw({ type: '*/*' }));
@@ -48,10 +57,12 @@ app.use('/api/gallery', require("./routes/ImageRoutes"));
 app.use('/api/phonepe', require("./routes/phonepeRoutes"));
 app.use("/api/feedback",  require("./routes/feedbackRoute"));
 app.use("/api/users", require("./routes/userRoutes"));
+
 // Root route
 app.get("/", (req, res) => {
-  res.send("Backend API is running...");
+  res.send("Booking System Backend API is running...");
 });
+
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
