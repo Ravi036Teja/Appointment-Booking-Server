@@ -92,6 +92,8 @@ const bookingSchema = new mongoose.Schema({
         phonepeTransactionId: String,
         rawCallback: Object,
     },
+    
+    frontendUrl: { type: String },
 
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
