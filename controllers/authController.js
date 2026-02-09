@@ -1,229 +1,84 @@
-// const AdminUser = require('../models/AdminUser');
-// const jwt = require('jsonwebtoken');
-// const { Expo } = require("expo-server-sdk");
-// const expo = new Expo();
-
-// // FOR TESTING: Temporary store for OTPs for new signup numbers
-// // In production, you would use Redis or a separate MongoDB collection
-// const signupOTPs = new Map(); 
-
-// const generateToken = (id) => {
-//   if (!process.env.JWT_SECRET) {
-//     throw new Error('Server configuration error: JWT secret missing.');
-//   }
-//   return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
-// };
-
-// // 1. Request OTP (Login, Signup, or Forgot Password)
-// exports.requestAdminOTP = async (req, res) => {
-//     const { phone, expoPushToken, type } = req.body;
-//     try {
-//         let admin = await AdminUser.findOne({ phone });
-
-//         if (type === 'signup') {
-//             if (admin) return res.status(400).json({ message: "Phone number already registered" });
-
-//             // Create OTP for new number
-//             const otp = Math.floor(100000 + Math.random() * 900000).toString();
-//             signupOTPs.set(phone, { otp, expires: Date.now() + 10 * 60 * 1000 });
-
-//             console.log(`\n--- [SIGNUP] OTP for ${phone}: ${otp} ---\n`);
-
-//             // Send push notification if token is provided
-//             if (expoPushToken && Expo.isExpoPushToken(expoPushToken)) {
-//                 try {
-//                     await expo.sendPushNotificationsAsync([{
-//                         to: expoPushToken,
-//                         sound: 'default',
-//                         title: 'Your OTP Code',
-//                         body: `Your verification code is: ${otp}`,
-//                         data: { otp, type: 'signup' },
-//                         priority: 'high',
-//                     }]);
-//                     console.log(`✅ Push notification sent to ${expoPushToken}`);
-//                 } catch (pushError) {
-//                     console.error('❌ Push notification failed:', pushError);
-//                 }
-//             } else {
-//                 console.log('⚠️ No valid push token provided');
-//             }
-
-//             return res.json({ message: "OTP sent (Check your device)" });
-//         }
-
-//         if (!admin) {
-//             return res.status(404).json({ message: "No account found with this phone number" });
-//         }
-
-//         const otp = Math.floor(100000 + Math.random() * 900000).toString();
-//         admin.otp = otp;
-//         admin.otpExpires = Date.now() + 10 * 60 * 1000;
-//         await admin.save();
-
-//         console.log(`\n--- [${type.toUpperCase()}] OTP for ${admin.email}: ${otp} ---\n`);
-
-//         // Send push notification if token is provided
-//         if (expoPushToken && Expo.isExpoPushToken(expoPushToken)) {
-//             try {
-//                 await expo.sendPushNotificationsAsync([{
-//                     to: expoPushToken,
-//                     sound: 'default',
-//                     title: 'Your OTP Code',
-//                     body: `Your verification code is: ${otp}`,
-//                     data: { otp, type },
-//                     priority: 'high',
-//                 }]);
-//                 console.log(`✅ Push notification sent to ${expoPushToken}`);
-//             } catch (pushError) {
-//                 console.error('❌ Push notification failed:', pushError);
-//             }
-//         } else {
-//             console.log('⚠️ No valid push token provided');
-//         }
-
-//         res.json({ message: "OTP sent successfully" });
-//     } catch (error) {
-//         res.status(500).json({ message: "Error", error: error.message });
-//     }
-// };
-
-// // 2. Verify OTP (For the Signup Screen 'Verify' button)
-// exports.verifyOTP = async (req, res) => {
-//     const { phone, otp } = req.body;
-//     try {
-//         const stored = signupOTPs.get(phone);
-//         if (!stored || stored.otp !== otp || stored.expires < Date.now()) {
-//             return res.status(400).json({ message: "Invalid or expired OTP" });
-//         }
-//         // Success
-//         res.json({ message: "Verified successfully" });
-//     } catch (error) {
-//         res.status(500).json({ message: "Verification error" });
-//     }
-// };
-
-// // 3. Phone OTP Login
-// exports.adminOTPLogin = async (req, res) => {
-//     const { phone, otp } = req.body;
-//     try {
-//         const admin = await AdminUser.findOne({ 
-//             phone, 
-//             otp, 
-//             otpExpires: { $gt: Date.now() } 
-//         });
-
-//         if (!admin) return res.status(400).json({ message: "Invalid or expired OTP" });
-
-//         admin.otp = undefined;
-//         admin.otpExpires = undefined;
-//         await admin.save();
-
-//         res.json({
-//             _id: admin._id,
-//             email: admin.email,
-//             phone: admin.phone,
-//             token: generateToken(admin._id),
-//         });
-//     } catch (error) {
-//         res.status(500).json({ message: "Login error", error: error.message });
-//     }
-// };
-
-// // 4. Reset Password via OTP
-// exports.resetPasswordOTP = async (req, res) => {
-//     const { phone, otp, newPassword } = req.body;
-//     try {
-//         const admin = await AdminUser.findOne({ 
-//             phone, 
-//             otp, 
-//             otpExpires: { $gt: Date.now() } 
-//         }).select('+password');
-
-//         if (!admin) return res.status(400).json({ message: "Invalid or expired OTP" });
-
-//         admin.password = newPassword;
-//         admin.otp = undefined;
-//         admin.otpExpires = undefined;
-//         await admin.save();
-
-//         res.json({ message: "Password updated successfully" });
-//     } catch (error) {
-//         res.status(500).json({ message: "Reset error" });
-//     }
-// };
-
-// // 5. Standard Signup (Final Step)
-// exports.adminSignup = async (req, res) => {
-//     const { email, password, phone } = req.body;
-//     if (!email || !password || !phone) {
-//         return res.status(400).json({ message: 'Please fill all fields' });
-//     }
-//     try {
-//         let user = await AdminUser.findOne({ $or: [{ email }, { phone }] });
-//         if (user) {
-//             return res.status(400).json({ message: 'User already exists' });
-//         }
-
-//         user = await AdminUser.create({ email, password, phone });
-//         signupOTPs.delete(phone); // Clear signup memory
-
-//         res.status(201).json({
-//             _id: user._id,
-//             email: user.email,
-//             phone: user.phone,
-//             token: generateToken(user._id),
-//         });
-//     } catch (error) {
-//         res.status(500).json({ message: 'Error during signup', details: error.message });
-//     }
-// };
-
-// // 6. Standard Email Login
-// exports.adminLogin = async (req, res) => {
-//     const { email, password } = req.body;
-//     try {
-//         const user = await AdminUser.findOne({ email }).select('+password');
-//         if (!user || !(await user.matchPassword(password))) {
-//             return res.status(400).json({ message: 'Invalid credentials' });
-//         }
-
-//         res.json({
-//             _id: user._id,
-//             email: user.email,
-//             phone: user.phone,
-//             token: generateToken(user._id),
-//         });
-//     } catch (error) {
-//         res.status(500).json({ message: 'Server error' });
-//     }
-// };
-
 const AdminUser = require('../models/AdminUser');
+const OTP = require('../models/OTP');
 const jwt = require('jsonwebtoken');
 const admin = require('firebase-admin');
 
-// 1. Initialize Firebase Admin
-// Make sure the JSON file path matches where you put the file on your server
-const serviceAccount = require('../first-app-9c28c-firebase-adminsdk-fbsvc-389d13f544.json');
+// ==================== FIREBASE INITIALIZATION ====================
+// Initialize Firebase Admin SDK from environment variables
+const initializeFirebase = () => {
+    try {
+        if (admin.apps.length > 0) {
+            return; // Already initialized
+        }
 
-if (!admin.apps.length) {
-    admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
-    });
-}
+        const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+        if (!serviceAccountKey) {
+            console.warn('⚠️ WARNING: FIREBASE_SERVICE_ACCOUNT_KEY not set in .env');
+            console.warn('Firebase push notifications will be disabled');
+            return;
+        }
 
-// Temporary store for signup OTPs
-const signupOTPs = new Map(); 
+        const serviceAccount = JSON.parse(serviceAccountKey);
 
-const generateToken = (id) => {
-  if (!process.env.JWT_SECRET) {
-    throw new Error('Server configuration error: JWT secret missing.');
-  }
-  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+        admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount)
+        });
+
+        console.log('✅ Firebase Admin SDK initialized successfully');
+    } catch (error) {
+        console.error('❌ Firebase initialization error:', error.message);
+    }
 };
 
-// Helper function to send Firebase Notification
-const sendFCMNotification = async (token, otp) => {
+// Initialize Firebase on startup
+initializeFirebase(); 
+
+// ==================== UTILITY FUNCTIONS ====================
+
+// Generate JWT Token
+const generateToken = (id) => {
+    if (!process.env.JWT_SECRET) {
+        throw new Error('Server configuration error: JWT secret missing.');
+    }
+    return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+};
+
+// Validate phone number format (basic validation)
+const validatePhone = (phone) => {
+    const phoneRegex = /^[0-9]{10}$/; // 10-digit phone number
+    return phoneRegex.test(phone.replace(/\D/g, ''));
+};
+
+// Validate email format
+const validateEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+};
+
+// Validate FCM token format
+const validateFCMToken = (token) => {
+    return token && typeof token === 'string' && token.length > 50;
+};
+
+// Generate random 6-digit OTP
+const generateOTP = () => {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+// Send Firebase Cloud Messaging notification
+const sendFCMNotification = async (fcmToken, otp, type = 'signup') => {
+    // Check if Firebase is initialized
+    if (!admin.apps.length) {
+        console.warn('⚠️ Firebase not initialized, skipping push notification');
+        return false;
+    }
+
+    // Validate FCM token format
+    if (!validateFCMToken(fcmToken)) {
+        console.warn('⚠️ Invalid FCM token format');
+        return false;
+    }
+
     const message = {
         notification: {
             title: 'Your OTP Code',
@@ -233,10 +88,22 @@ const sendFCMNotification = async (token, otp) => {
             priority: 'high',
             notification: {
                 sound: 'default',
-                channelId: 'default',
+                channelId: 'OTP_VERIFICATION',
             },
         },
-        token: token,
+        apns: {
+            payload: {
+                aps: {
+                    sound: 'default',
+                    badge: 1,
+                },
+            },
+        },
+        data: {
+            otp: otp,
+            type: type,
+        },
+        token: fcmToken,
     };
 
     try {
@@ -244,161 +111,490 @@ const sendFCMNotification = async (token, otp) => {
         console.log('✅ Firebase notification sent:', response);
         return true;
     } catch (error) {
-        console.error('❌ Firebase notification failed:', error);
+        console.error('❌ Firebase notification error:', error.message);
+        // Log for monitoring but don't fail the OTP request
         return false;
     }
 };
 
+// Check if user is rate limited
+const isRateLimited = async (phone) => {
+    const otpRecord = await OTP.findOne({ phone }).sort({ createdAt: -1 });
+    
+    if (!otpRecord) return false;
+    
+    // If blocked, check if block period has expired
+    if (otpRecord.isBlocked && otpRecord.blockedUntil) {
+        if (new Date() < otpRecord.blockedUntil) {
+            return true; // Still blocked
+        }
+        // Block period expired, unblock
+        await OTP.updateOne({ _id: otpRecord._id }, { isBlocked: false });
+        return false;
+    }
+    
+    return false;
+};
+
+// Increment OTP attempt counter
+const incrementAttempts = async (phone) => {
+    const otpRecord = await OTP.findOne({ phone }).sort({ createdAt: -1 });
+    
+    if (!otpRecord) return;
+    
+    const newAttempts = (otpRecord.attempts || 0) + 1;
+    
+    if (newAttempts >= 5) {
+        // Block for 15 minutes after 5 failed attempts
+        const blockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+        await OTP.updateOne(
+            { _id: otpRecord._id },
+            { 
+                attempts: newAttempts,
+                isBlocked: true,
+                blockedUntil: blockedUntil,
+                lastAttemptTime: new Date()
+            }
+        );
+    } else {
+        await OTP.updateOne(
+            { _id: otpRecord._id },
+            { 
+                attempts: newAttempts,
+                lastAttemptTime: new Date()
+            }
+        );
+    }
+};
+
+// ==================== EXPORTS ====================
+
 // 1. Request OTP (Login, Signup, or Forgot Password)
 exports.requestAdminOTP = async (req, res) => {
-    // Note: We renamed expoPushToken to fcmToken for clarity
-    const { phone, fcmToken, type } = req.body; 
-    
+    const { phone, fcmToken, type } = req.body;
+
     try {
+        // ===== INPUT VALIDATION =====
+        if (!phone || !type) {
+            return res.status(400).json({ 
+                success: false,
+                message: "Phone number and type are required" 
+            });
+        }
+
+        if (!validatePhone(phone)) {
+            return res.status(400).json({ 
+                success: false,
+                message: "Invalid phone number format" 
+            });
+        }
+
+        if (!['signup', 'login', 'forgot-password'].includes(type)) {
+            return res.status(400).json({ 
+                success: false,
+                message: "Invalid OTP type" 
+            });
+        }
+
+        // ===== RATE LIMITING CHECK =====
+        if (await isRateLimited(phone)) {
+            return res.status(429).json({ 
+                success: false,
+                message: "Too many attempts. Please try again in 15 minutes" 
+            });
+        }
+
+        // ===== TYPE-SPECIFIC VALIDATION =====
         let adminUser = await AdminUser.findOne({ phone });
 
         if (type === 'signup') {
-            if (adminUser) return res.status(400).json({ message: "Phone number already registered" });
-
-            const otp = Math.floor(100000 + Math.random() * 900000).toString();
-            signupOTPs.set(phone, { otp, expires: Date.now() + 10 * 60 * 1000 });
-
-            console.log(`\n--- [SIGNUP] OTP for ${phone}: ${otp} ---\n`);
-
-            if (fcmToken) {
-                await sendFCMNotification(fcmToken, otp);
+            if (adminUser) {
+                return res.status(400).json({ 
+                    success: false,
+                    message: "Phone number already registered" 
+                });
             }
-
-            return res.json({ message: "OTP sent (Check your device)" });
+        } else {
+            if (!adminUser) {
+                return res.status(404).json({ 
+                    success: false,
+                    message: "No account found with this phone number" 
+                });
+            }
         }
 
-        if (!adminUser) {
-            return res.status(404).json({ message: "No account found with this phone number" });
-        }
+        // ===== GENERATE OTP =====
+        const otp = generateOTP();
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        adminUser.otp = otp;
-        adminUser.otpExpires = Date.now() + 10 * 60 * 1000;
-        await adminUser.save();
+        // Save OTP to MongoDB
+        await OTP.create({
+            phone,
+            otp,
+            type,
+            expiresAt,
+            attempts: 0,
+            isBlocked: false
+        });
 
-        console.log(`\n--- [${type.toUpperCase()}] OTP for ${adminUser.email}: ${otp} ---\n`);
+        console.log(`\n--- [${type.toUpperCase()}] OTP for ${phone}: ${otp} ---\n`);
 
+        // ===== SEND FCM NOTIFICATION =====
         if (fcmToken) {
-            await sendFCMNotification(fcmToken, otp);
+            await sendFCMNotification(fcmToken, otp, type);
+        } else {
+            console.log('⚠️ No FCM token provided (push notification skipped)');
         }
 
-        res.json({ message: "OTP sent successfully" });
+        return res.status(200).json({ 
+            success: true,
+            message: "OTP sent successfully",
+            data: {
+                phone: phone.slice(-4) // Only return last 4 digits for security
+            }
+        });
+
     } catch (error) {
-        res.status(500).json({ message: "Error", error: error.message });
+        console.error('❌ requestAdminOTP error:', error);
+        return res.status(500).json({ 
+            success: false,
+            message: "Failed to send OTP. Please try again later"
+        });
     }
 };
 
 // 2. Verify OTP
 exports.verifyOTP = async (req, res) => {
     const { phone, otp } = req.body;
+
     try {
-        const stored = signupOTPs.get(phone);
-        if (!stored || stored.otp !== otp || stored.expires < Date.now()) {
-            return res.status(400).json({ message: "Invalid or expired OTP" });
+        // ===== INPUT VALIDATION =====
+        if (!phone || !otp) {
+            return res.status(400).json({ 
+                success: false,
+                message: "Phone and OTP are required" 
+            });
         }
-        res.json({ message: "Verified successfully" });
+
+        if (!validatePhone(phone)) {
+            return res.status(400).json({ 
+                success: false,
+                message: "Invalid phone number format" 
+            });
+        }
+
+        // ===== FIND AND VERIFY OTP =====
+        const otpRecord = await OTP.findOne({
+            phone,
+            otp,
+            expiresAt: { $gt: new Date() }, // Not expired
+            isBlocked: false // Not blocked
+        });
+
+        if (!otpRecord) {
+            // Increment failed attempts
+            await incrementAttempts(phone);
+
+            return res.status(400).json({ 
+                success: false,
+                message: "Invalid or expired OTP" 
+            });
+        }
+
+        // ===== MARK OTP AS VERIFIED =====
+        await OTP.updateOne(
+            { _id: otpRecord._id },
+            { 
+                isVerified: true,
+                verifiedAt: new Date()
+            }
+        );
+
+        return res.status(200).json({ 
+            success: true,
+            message: "OTP verified successfully",
+            data: {
+                phone: phone.slice(-4)
+            }
+        });
+
     } catch (error) {
-        res.status(500).json({ message: "Verification error" });
+        console.error('❌ verifyOTP error:', error);
+        return res.status(500).json({ 
+            success: false,
+            message: "Verification failed. Please try again later"
+        });
     }
 };
 
 // 3. Phone OTP Login
 exports.adminOTPLogin = async (req, res) => {
     const { phone, otp } = req.body;
+
     try {
-        const adminUser = await AdminUser.findOne({ 
-            phone, 
-            otp, 
-            otpExpires: { $gt: Date.now() } 
+        // ===== INPUT VALIDATION =====
+        if (!phone || !otp) {
+            return res.status(400).json({ 
+                success: false,
+                message: "Phone and OTP are required" 
+            });
+        }
+
+        if (!validatePhone(phone)) {
+            return res.status(400).json({ 
+                success: false,
+                message: "Invalid phone number format" 
+            });
+        }
+
+        // ===== VERIFY OTP =====
+        const otpRecord = await OTP.findOne({
+            phone,
+            otp,
+            type: 'login',
+            expiresAt: { $gt: new Date() },
+            isBlocked: false
         });
 
-        if (!adminUser) return res.status(400).json({ message: "Invalid or expired OTP" });
+        if (!otpRecord) {
+            await incrementAttempts(phone);
+            return res.status(400).json({ 
+                success: false,
+                message: "Invalid or expired OTP" 
+            });
+        }
 
-        adminUser.otp = undefined;
-        adminUser.otpExpires = undefined;
-        await adminUser.save();
+        // ===== FIND USER =====
+        const adminUser = await AdminUser.findOne({ phone });
 
-        res.json({
-            _id: adminUser._id,
-            email: adminUser.email,
-            phone: adminUser.phone,
-            token: generateToken(adminUser._id),
+        if (!adminUser) {
+            return res.status(404).json({ 
+                success: false,
+                message: "User account not found" 
+            });
+        }
+
+        // ===== CLEANUP & LOGIN =====
+        await OTP.deleteOne({ _id: otpRecord._id });
+
+        return res.status(200).json({
+            success: true,
+            message: "Login successful",
+            data: {
+                _id: adminUser._id,
+                email: adminUser.email,
+                phone: adminUser.phone,
+                token: generateToken(adminUser._id),
+            }
         });
+
     } catch (error) {
-        res.status(500).json({ message: "Login error", error: error.message });
+        console.error('❌ adminOTPLogin error:', error);
+        return res.status(500).json({ 
+            success: false,
+            message: "Login failed. Please try again later"
+        });
     }
 };
 
 // 4. Reset Password via OTP
 exports.resetPasswordOTP = async (req, res) => {
     const { phone, otp, newPassword } = req.body;
-    try {
-        const adminUser = await AdminUser.findOne({ 
-            phone, 
-            otp, 
-            otpExpires: { $gt: Date.now() } 
-        }).select('+password');
 
-        if (!adminUser) return res.status(400).json({ message: "Invalid or expired OTP" });
+    try {
+        // ===== INPUT VALIDATION =====
+        if (!phone || !otp || !newPassword) {
+            return res.status(400).json({ 
+                success: false,
+                message: "Phone, OTP, and new password are required" 
+            });
+        }
+
+        if (!validatePhone(phone)) {
+            return res.status(400).json({ 
+                success: false,
+                message: "Invalid phone number format" 
+            });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ 
+                success: false,
+                message: "Password must be at least 6 characters" 
+            });
+        }
+
+        // ===== VERIFY OTP =====
+        const otpRecord = await OTP.findOne({
+            phone,
+            otp,
+            type: 'forgot-password',
+            expiresAt: { $gt: new Date() },
+            isBlocked: false
+        });
+
+        if (!otpRecord) {
+            await incrementAttempts(phone);
+            return res.status(400).json({ 
+                success: false,
+                message: "Invalid or expired OTP" 
+            });
+        }
+
+        // ===== UPDATE PASSWORD =====
+        const adminUser = await AdminUser.findOne({ phone });
+
+        if (!adminUser) {
+            return res.status(404).json({ 
+                success: false,
+                message: "User not found" 
+            });
+        }
 
         adminUser.password = newPassword;
-        adminUser.otp = undefined;
-        adminUser.otpExpires = undefined;
         await adminUser.save();
 
-        res.json({ message: "Password updated successfully" });
+        // ===== CLEANUP =====
+        await OTP.deleteOne({ _id: otpRecord._id });
+
+        return res.status(200).json({ 
+            success: true,
+            message: "Password reset successfully"
+        });
+
     } catch (error) {
-        res.status(500).json({ message: "Reset error" });
+        console.error('❌ resetPasswordOTP error:', error);
+        return res.status(500).json({ 
+            success: false,
+            message: "Password reset failed. Please try again later"
+        });
     }
 };
 
 // 5. Standard Signup
 exports.adminSignup = async (req, res) => {
     const { email, password, phone } = req.body;
-    if (!email || !password || !phone) {
-        return res.status(400).json({ message: 'Please fill all fields' });
-    }
+
     try {
-        let user = await AdminUser.findOne({ $or: [{ email }, { phone }] });
-        if (user) {
-            return res.status(400).json({ message: 'User already exists' });
+        // ===== INPUT VALIDATION =====
+        if (!email || !password || !phone) {
+            return res.status(400).json({ 
+                success: false,
+                message: "Email, password, and phone are required" 
+            });
         }
 
-        user = await AdminUser.create({ email, password, phone });
-        signupOTPs.delete(phone); 
+        if (!validateEmail(email)) {
+            return res.status(400).json({ 
+                success: false,
+                message: "Invalid email format" 
+            });
+        }
 
-        res.status(201).json({
-            _id: user._id,
-            email: user.email,
-            phone: user.phone,
-            token: generateToken(user._id),
+        if (!validatePhone(phone)) {
+            return res.status(400).json({ 
+                success: false,
+                message: "Invalid phone number format" 
+            });
+        }
+
+        if (password.length < 6) {
+            return res.status(400).json({ 
+                success: false,
+                message: "Password must be at least 6 characters" 
+            });
+        }
+
+        // ===== CHECK EXISTING USER =====
+        let existingUser = await AdminUser.findOne({ 
+            $or: [{ email: email.toLowerCase() }, { phone }] 
         });
+
+        if (existingUser) {
+            return res.status(400).json({ 
+                success: false,
+                message: "User already exists with this email or phone" 
+            });
+        }
+
+        // ===== CREATE NEW USER =====
+        const newUser = await AdminUser.create({
+            email: email.toLowerCase(),
+            password,
+            phone
+        });
+
+        // ===== CLEANUP OTP =====
+        await OTP.deleteMany({ phone, type: 'signup' });
+
+        return res.status(201).json({
+            success: true,
+            message: "Signup successful",
+            data: {
+                _id: newUser._id,
+                email: newUser.email,
+                phone: newUser.phone,
+                token: generateToken(newUser._id),
+            }
+        });
+
     } catch (error) {
-        res.status(500).json({ message: 'Error during signup', details: error.message });
+        console.error('❌ adminSignup error:', error);
+        return res.status(500).json({ 
+            success: false,
+            message: "Signup failed. Please try again later"
+        });
     }
 };
 
 // 6. Standard Email Login
 exports.adminLogin = async (req, res) => {
     const { email, password } = req.body;
+
     try {
-        const user = await AdminUser.findOne({ email }).select('+password');
-        if (!user || !(await user.matchPassword(password))) {
-            return res.status(400).json({ message: 'Invalid credentials' });
+        // ===== INPUT VALIDATION =====
+        if (!email || !password) {
+            return res.status(400).json({ 
+                success: false,
+                message: "Email and password are required" 
+            });
         }
 
-        res.json({
-            _id: user._id,
-            email: user.email,
-            phone: user.phone,
-            token: generateToken(user._id),
+        if (!validateEmail(email)) {
+            return res.status(400).json({ 
+                success: false,
+                message: "Invalid email format" 
+            });
+        }
+
+        // ===== FIND USER & VERIFY PASSWORD =====
+        const adminUser = await AdminUser.findOne({ 
+            email: email.toLowerCase() 
+        }).select('+password');
+
+        if (!adminUser || !(await adminUser.matchPassword(password))) {
+            return res.status(401).json({ 
+                success: false,
+                message: "Invalid email or password" 
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Login successful",
+            data: {
+                _id: adminUser._id,
+                email: adminUser.email,
+                phone: adminUser.phone,
+                token: generateToken(adminUser._id),
+            }
         });
+
     } catch (error) {
-        res.status(500).json({ message: 'Server error' });
+        console.error('❌ adminLogin error:', error);
+        return res.status(500).json({ 
+            success: false,
+            message: "Login failed. Please try again later"
+        });
     }
 };
