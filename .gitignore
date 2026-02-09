@@ -1,3 +1,8 @@
+# Firebase Admin SDK keys (Specific and Wildcard)
+*.json
+!package.json
+!package-lock.json
+
 # Node modules
 node_modules/
 
@@ -23,4 +28,6 @@ Thumbs.db
 dist/
 build/
 coverage/
-"first-app-9c28c-firebase-adminsdk-fbsvc-a7f9a406be.json" 
+"first-app-9c28c-firebase-adminsdk-fbsvc-389d13f544.json" 
+"first-app-9c28c-firebase-adminsdk-fbsvc-389d13f544.json" 
+"first-app-9c28c-firebase-adminsdk-fbsvc-389d13f544.json" 

@@ -204,7 +204,7 @@ const admin = require('firebase-admin');
 
 // 1. Initialize Firebase Admin
 // Make sure the JSON file path matches where you put the file on your server
-const serviceAccount = require('../first-app-9c28c-firebase-adminsdk-fbsvc-a7f9a406be.json');
+const serviceAccount = require('../first-app-9c28c-firebase-adminsdk-fbsvc-389d13f544.json');
 
 if (!admin.apps.length) {
     admin.initializeApp({
