@@ -2,7 +2,7 @@ const AdminUser = require('../models/AdminUser');
 const OTP = require('../models/OTP');
 const jwt = require('jsonwebtoken');
 const admin = require('firebase-admin');
-const serviceAccount = require('../first-app-9c28c-firebase-adminsdk-fbsvc-4682e84a43.json');
+// const serviceAccount = require('../first-app-9c28c-firebase-adminsdk-fbsvc-4682e84a43.json');
 
 // ==================== FIREBASE INITIALIZATION ====================
 // Initialize Firebase Admin SDK from environment variables
