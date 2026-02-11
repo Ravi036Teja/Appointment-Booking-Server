@@ -6,32 +6,67 @@ const admin = require('firebase-admin');
 
 // ==================== FIREBASE INITIALIZATION ====================
 // Initialize Firebase Admin SDK from environment variables
+// const initializeFirebase = () => {
+//     try {
+//         if (admin.apps.length > 0) return;
+
+//         let serviceAccount;
+        
+//         if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+//             // Parse the JSON string from Environment Variables
+//             serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+            
+//             // Fix for private key newlines if they get escaped
+//             if (serviceAccount.private_key) {
+//                 serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+//             }
+//         } else {
+//             console.warn('⚠️ FIREBASE_SERVICE_ACCOUNT env variable is missing!');
+//             return;
+//         }
+
+//         admin.initializeApp({
+//             credential: admin.credential.cert(serviceAccount)
+//         });
+
+//         console.log('✅ Firebase Admin SDK initialized via Environment Variables');
+//     } catch (error) {
+//         console.error('❌ Firebase init error:', error.message);
+//     }
+// };
+
+// initializeFirebase();
+
 const initializeFirebase = () => {
     try {
+        // Prevent multiple initializations
         if (admin.apps.length > 0) return;
 
-        let serviceAccount;
-        
-        if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-            // Parse the JSON string from Environment Variables
-            serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-            
-            // Fix for private key newlines if they get escaped
-            if (serviceAccount.private_key) {
-                serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
-            }
-        } else {
-            console.warn('⚠️ FIREBASE_SERVICE_ACCOUNT env variable is missing!');
+        const rawServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
+
+        if (!rawServiceAccount) {
+            console.error('❌ CRITICAL: FIREBASE_SERVICE_ACCOUNT env variable is missing!');
             return;
         }
 
+        // 1. Parse string to Object
+        let serviceAccount = typeof rawServiceAccount === 'string' 
+            ? JSON.parse(rawServiceAccount) 
+            : rawServiceAccount;
+
+        // 2. Fix the private_key newline issue (common in Vercel/Render)
+        if (serviceAccount.private_key) {
+            serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+        }
+
+        // 3. Initialize
         admin.initializeApp({
             credential: admin.credential.cert(serviceAccount)
         });
 
-        console.log('✅ Firebase Admin SDK initialized via Environment Variables');
+        console.log('✅ Firebase Admin SDK initialized for project:', serviceAccount.project_id);
     } catch (error) {
-        console.error('❌ Firebase init error:', error.message);
+        console.error('❌ Firebase initialization failed:', error.message);
     }
 };
 
