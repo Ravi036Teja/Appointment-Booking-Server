@@ -1,117 +1,3 @@
-// // backend/controllers/blockedSlotController.js
-// const BlockedSlot = require("../models/BlockedSlot");
-// const Booking = require("../models/Booking"); // <--- NEW: Import Booking model
-
-// // Block specific slots or full day for a date
-// // @route   POST /api/blocked/block
-// // @access  Private/Admin
-// exports.blockSlots = async (req, res) => {
-//   try {
-//     const { date, timeSlots, message } = req.body; // <--- NEW: message
-
-//     if (!date) {
-//       return res.status(400).json({ message: "Date is required." });
-//     }
-
-//     // --- NEW: Check for existing bookings on that date ---
-//     const existingBookings = await Booking.countDocuments({ date });
-//     if (existingBookings > 0) {
-//       return res.status(400).json({
-//         message: `Cannot block ${date}. There are ${existingBookings} existing booking(s) on this day. Please clear bookings first or choose another date.`,
-//         hasBookings: true
-//       });
-//     }
-//     // ----------------------------------------------------
-
-//     const existingBlocked = await BlockedSlot.findOne({ date });
-
-//     if (existingBlocked) {
-//       // If already blocked, update its timeSlots and message
-//       existingBlocked.timeSlots = timeSlots || []; // Ensure it's an array
-//       existingBlocked.message = message || "This date is unavailable. Please choose another day."; // Update message
-//       await existingBlocked.save();
-//       return res.status(200).json(existingBlocked);
-//     }
-
-//     // Create new blocked entry
-//     const newBlocked = await BlockedSlot.create({
-//       date,
-//       timeSlots: timeSlots || [], // Ensure it's an array
-//       message: message || "This date is unavailable. Please choose another day." // Save message
-//     });
-//     res.status(201).json(newBlocked);
-
-//   } catch (error) {
-//     console.error("Error blocking slots:", error); // Log the actual error
-//     if (error.code === 11000) { // MongoDB duplicate key error (if date already exists)
-//       return res.status(409).json({ message: "This date is already blocked." });
-//     }
-//     res.status(500).json({ message: "Server error during blocking slots", error: error.message });
-//   }
-// };
-
-// // Get blocked slots by date
-// // @route   GET /api/blocked/:date
-// // @access  Public (for user-facing pages)
-// exports.getBlockedByDate = async (req, res) => {
-//   try {
-//     const { date } = req.params;
-//     const blocked = await BlockedSlot.findOne({ date });
-
-//     if (!blocked) {
-//       return res.json({ timeSlots: [], message: "", isBlocked: false }); // Indicate not blocked
-//     }
-
-//     res.json({
-//       timeSlots: blocked.timeSlots,
-//       message: blocked.message,
-//       isBlocked: true,
-//     });
-//   } catch (error) {
-//     console.error("Error fetching blocked data:", error);
-//     res.status(500).json({ message: "Error fetching blocked data", error: error.message });
-//   }
-// };
-
-// // Get all blocked dates
-// // @route   GET /api/blocked/
-// // @access  Private/Admin
-// exports.getAllBlockedDates = async (req, res) => {
-//   try {
-//     const all = await BlockedSlot.find().sort({ date: 1 }); // Sort by date for better display
-//     res.json(all);
-//   } catch (error) {
-//     console.error('Error fetching all blocked slots:', error);
-//     res.status(500).json({ message: 'Error fetching blocked slots', error: error.message });
-//   }
-// };
-
-// // Delete/unblock a date
-// // @route   DELETE /api/blocked/:date
-// // @access  Private/Admin
-// exports.deleteBlockedDate = async (req, res) => {
-//   try {
-//     const { date } = req.params;
-//     const deleted = await BlockedSlot.findOneAndDelete({ date });
-
-//     if (!deleted) {
-//       return res.status(404).json({ message: "Blocked date not found." });
-//     }
-
-//     res.json({ success: true, message: "Date unblocked successfully" });
-//   } catch (error) {
-//     console.error("Error deleting blocked date:", error);
-//     res.status(500).json({ message: "Server error deleting blocked date", error: error.message });
-//   }
-// };
-
-// // Note: blockDateRange from your provided code wasn't directly used by the frontend.
-// // If you want to use it, you'd need a frontend component to utilize it.
-// // For now, I'm focusing on aligning with the AdminSlotControlPage.
-// // If you uncommented that, ensure it's exported and a route exists for it.
-// // exports.blockDateRange = async (req, res) => { /* ... */ };
-
-
 const BlockedSlot = require("../models/BlockedSlot");
 const Booking = require("../models/Booking");
 
@@ -220,28 +106,91 @@ exports.getAllBlockedDates = async (req, res) => {
 // Delete/unblock a date
 // @route   DELETE /api/blocked/:date
 // @access  Private/Admin
+// exports.deleteBlockedDate = async (req, res) => {
+//   try {
+//     const { date } = req.params;
+    
+//     // Check for any bookings on the date before allowing unblock
+//     const existingBookings = await Booking.countDocuments({ date });
+//     if (existingBookings > 0) {
+//         return res.status(400).json({
+//             message: `Cannot unblock ${date}. There are ${existingBookings} existing booking(s) on this day. Please clear or move bookings first.`,
+//             hasBookings: true
+//         });
+//     }
+
+//     const deleted = await BlockedSlot.findOneAndDelete({ date });
+
+//     if (!deleted) {
+//       return res.status(404).json({ message: "Blocked date not found." });
+//     }
+
+//     res.json({ success: true, message: "Date unblocked successfully" });
+//   } catch (error) {
+//     console.error("Error deleting blocked date:", error);
+//     res.status(500).json({ message: "Server error deleting blocked date", error: error.message });
+//   }
+// };
+
+// --- UPDATED: Delete/unblock a full date ---
+// @route   DELETE /api/blocked/:date
+// @access  Private/Admin
 exports.deleteBlockedDate = async (req, res) => {
   try {
     const { date } = req.params;
     
-    // Check for any bookings on the date before allowing unblock
-    const existingBookings = await Booking.countDocuments({ date });
-    if (existingBookings > 0) {
-        return res.status(400).json({
-            message: `Cannot unblock ${date}. There are ${existingBookings} existing booking(s) on this day. Please clear or move bookings first.`,
-            hasBookings: true
-        });
-    }
-
+    // We search for the record by date string
     const deleted = await BlockedSlot.findOneAndDelete({ date });
 
     if (!deleted) {
-      return res.status(404).json({ message: "Blocked date not found." });
+      return res.status(404).json({ message: "This date was not blocked." });
     }
 
-    res.json({ success: true, message: "Date unblocked successfully" });
+    res.json({ 
+      success: true, 
+      message: `Date ${date} is now open for bookings.` 
+    });
   } catch (error) {
     console.error("Error deleting blocked date:", error);
     res.status(500).json({ message: "Server error deleting blocked date", error: error.message });
+  }
+};
+
+// --- NEW: Unblock specific slots from a date ---
+// @route   PATCH /api/blocked/unblock-slots
+// @access  Private/Admin
+exports.unblockSpecificSlots = async (req, res) => {
+  try {
+    const { date, slotsToUnblock } = req.body; // e.g., date: "2026-02-15", slotsToUnblock: ["10:00 AM"]
+
+    if (!date || !slotsToUnblock || !Array.isArray(slotsToUnblock)) {
+      return res.status(400).json({ message: "Date and an array of slots are required." });
+    }
+
+    const blockedEntry = await BlockedSlot.findOne({ date });
+
+    if (!blockedEntry) {
+      return res.status(404).json({ message: "No blocked slots found for this date." });
+    }
+
+    // If it was a full day block (empty array), and we want to unblock specific slots,
+    // we can't easily "subtract" from nothing. 
+    // Usually, users want to remove specific items from the existing blocked list:
+    blockedEntry.timeSlots = blockedEntry.timeSlots.filter(
+      (slot) => !slotsToUnblock.includes(slot)
+    );
+
+    // If after filtering, no slots are left blocked, delete the whole document
+    if (blockedEntry.timeSlots.length === 0) {
+      await BlockedSlot.deleteOne({ _id: blockedEntry._id });
+      return res.json({ success: true, message: "All slots unblocked. Date is now open." });
+    }
+
+    await blockedEntry.save();
+    res.json({ success: true, message: "Selected slots unblocked.", data: blockedEntry });
+
+  } catch (error) {
+    console.error("Error unblocking specific slots:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 };
