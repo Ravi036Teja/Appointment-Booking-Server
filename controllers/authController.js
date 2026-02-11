@@ -858,6 +858,68 @@ exports.requestAdminOTP = async (req, res) => {
     }
 };
 
+
+// exports.requestAdminOTP = async (req, res) => {
+//     const { phone, type } = req.body; // Removed fcmToken from req.body requirements
+
+//     try {
+//         if (!phone || !type) return res.status(400).json({ success: false, message: "Phone number and type are required" });
+//         if (!validatePhone(phone)) return res.status(400).json({ success: false, message: "Invalid phone number format" });
+
+//         if (await isRateLimited(phone)) {
+//             return res.status(429).json({ success: false, message: "Too many attempts. Please try again in 15 minutes" });
+//         }
+
+//         // 1. Find the admin user by phone to get their stored fcmToken
+//         let adminUser = await AdminUser.findOne({ phone });
+
+//         if (type === 'signup' && adminUser) {
+//             return res.status(400).json({ success: false, message: "Phone number already registered" });
+//         } 
+//         if ((type === 'login' || type === 'forgot-password') && !adminUser) {
+//             return res.status(404).json({ success: false, message: "No account found with this phone number" });
+//         }
+
+//         const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        
+//         // 2. Save OTP to database
+//         await OTP.create({
+//             phone,
+//             otp,
+//             type,
+//             expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+//             attempts: 0
+//         });
+
+//         console.log(`\n--- [${type.toUpperCase()}] OTP for ${phone}: ${otp} ---\n`);
+
+//         // 3. Automatically use the token from the database
+//         let delivered = false;
+//         const targetToken = adminUser?.fcmToken; // Get token from the user we just found
+
+//         if (targetToken) {
+//             delivered = await sendFCMNotification(targetToken, otp, type);
+//         } else {
+//             console.log('⚠️ No FCM token found in database for this admin');
+//         }
+
+//         return res.status(200).json({ 
+//             success: true,
+//             message: "OTP sent successfully",
+//             data: { 
+//                 phone: phone.slice(-4), 
+//                 deliveryStatus: delivered ? 'sent' : 'logged',
+//                 // For development, you can temporarily return the otp here if needed:
+//                 // otp: otp 
+//             }
+//         });
+
+//     } catch (error) {
+//         console.error('❌ requestAdminOTP error:', error);
+//         return res.status(500).json({ success: false, message: "Failed to send OTP", error: error.message });
+//     }
+// };
+
 exports.verifyOTP = async (req, res) => {
     const { phone, otp } = req.body;
 
